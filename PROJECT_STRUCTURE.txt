@@ -1,0 +1,70 @@
+ANAIA v1.0 MVP — Estrutura de Pastas (Next.js 14)
+====================================================
+
+anaia-mvp/
+├── app/
+│   ├── page.tsx
+│   │   └── Copiar conteúdo de: app-page.tsx
+│   │
+│   └── api/
+│       ├── company/
+│       │   └── lookup/
+│       │       └── route.ts
+│       │           └── Copiar conteúdo de: api-company-lookup.ts
+│       │
+│       ├── website/
+│       │   └── analyze/
+│       │       └── route.ts
+│       │           └── Copiar conteúdo de: api-website-analyze.ts
+│       │
+│       ├── ai-visibility/
+│       │   └── analyze/
+│       │       └── route.ts
+│       │           └── Copiar conteúdo de: api-ai-visibility.ts
+│       │
+│       └── diagnose/
+│           └── route.ts
+│               └── Copiar conteúdo de: api-diagnose.ts
+│
+├── lib/
+│   ├── supabase.ts
+│   │   └── Copiar conteúdo de: lib-supabase.ts
+│   │
+│   ├── providers.ts
+│   │   └── Copiar conteúdo de: lib-providers.ts
+│   │
+│   └── scoring.ts
+│       └── Copiar conteúdo de: lib-scoring.ts
+│
+├── .env.example
+│   └── Copiar de: .env.example → Renomear para .env.local
+│
+├── package.json
+│   └── Copiar conteúdo de: package.json (ou npm install deps)
+│
+└── supabase.sql
+    └── Executar no SQL Editor do Supabase
+
+====================================================
+
+DEPENDÊNCIAS A INSTALAR:
+npm install @supabase/supabase-js @supabase/ssr openai axios cheerio node-cache
+
+====================================================
+
+ARQUIVOS ADICIONAIS (Referência):
+- SUMMARY.md — Este resumo executivo
+- INSTALLATION.md — Guia passo-a-passo completo
+- ANAIA-v1.0-Data-Sources-Audit.md — Análise de fontes de dados (referência)
+
+====================================================
+
+NOTA: Todos os imports usam path aliases (@/lib, @/api, etc)
+Configurar tsconfig.json para:
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
+}
