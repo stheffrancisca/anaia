@@ -1,16 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
-
-// ============================================================================
-// SUPABASE CLIENT
-// ============================================================================
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
+import React, { useState } from 'react';
 
 // ============================================================================
 // TYPES
@@ -41,20 +31,44 @@ type Page = 'login' | 'signup' | 'dashboard' | 'input' | 'processing' | 'result'
 // COMPONENTS
 // ============================================================================
 
-const LoginPage: React.FC<{ onLogin: (email: string) => void }> = ({ onLogin }) => {
+const LoginPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSignUp, setIsSignUp] = useState(false);
 
+  const authenticate = async () => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data?.success || !data?.user) {
+      throw new Error(data?.error || 'Não foi possível realizar o login.');
+    }
+
+    onLogin({
+      id: data.user.id,
+      email: data.user.email || email,
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     const newErrors: { [key: string]: string } = {};
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       newErrors.email = 'E-mail inválido';
     }
+
     if (!password || password.length < 6) {
       newErrors.password = 'Senha deve ter no mínimo 6 caracteres';
     }
@@ -64,19 +78,44 @@ const LoginPage: React.FC<{ onLogin: (email: string) => void }> = ({ onLogin }) 
       return;
     }
 
+    setErrors({});
     setLoading(true);
+
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        alert('Verifique seu e-mail para confirmar');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        onLogin(email);
+        const response = await fetch('/api/auth/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data?.success) {
+          throw new Error(data?.error || 'Erro ao criar conta.');
+        }
+
+        if (data.requires_email_confirmation) {
+          alert('Conta criada. Verifique seu e-mail para confirmar o cadastro.');
+          setIsSignUp(false);
+          setPassword('');
+          return;
+        }
+
+        // O signup pode criar uma sessão no Supabase, mas o cookie HTTP-only
+        // do ANAIA é estabelecido pela nossa rota server-side de login.
+        await authenticate();
+        return;
       }
+
+      await authenticate();
     } catch (error) {
-      setErrors({ auth: error instanceof Error ? error.message : 'Erro de autenticação' });
+      setErrors({
+        auth: error instanceof Error ? error.message : 'Erro de autenticação',
+      });
     } finally {
       setLoading(false);
     }
@@ -94,10 +133,16 @@ const LoginPage: React.FC<{ onLogin: (email: string) => void }> = ({ onLogin }) 
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (errors.email || errors.auth) {
+                  setErrors((current) => ({ ...current, email: '', auth: '' }));
+                }
+              }}
               placeholder="seu@email.com"
               style={styles.input}
               disabled={loading}
+              autoComplete="email"
             />
             {errors.email && <span style={styles.error}>{errors.email}</span>}
           </div>
@@ -107,10 +152,16 @@ const LoginPage: React.FC<{ onLogin: (email: string) => void }> = ({ onLogin }) 
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (errors.password || errors.auth) {
+                  setErrors((current) => ({ ...current, password: '', auth: '' }));
+                }
+              }}
               placeholder="Mínimo 6 caracteres"
               style={styles.input}
               disabled={loading}
+              autoComplete={isSignUp ? 'new-password' : 'current-password'}
             />
             {errors.password && <span style={styles.error}>{errors.password}</span>}
           </div>
@@ -124,7 +175,15 @@ const LoginPage: React.FC<{ onLogin: (email: string) => void }> = ({ onLogin }) 
 
         <p style={styles.toggleAuth}>
           {isSignUp ? 'Já tem conta?' : 'Novo por aqui?'}{' '}
-          <span onClick={() => setIsSignUp(!isSignUp)} style={styles.toggleLink}>
+          <span
+            onClick={() => {
+              if (!loading) {
+                setIsSignUp(!isSignUp);
+                setErrors({});
+              }
+            }}
+            style={styles.toggleLink}
+          >
             {isSignUp ? 'Entrar' : 'Criar conta'}
           </span>
         </p>
@@ -668,39 +727,78 @@ export default function ANAIAApp() {
   const [user, setUser] = React.useState<User | null>(null);
   const [result, setResult] = React.useState<DiagnosticResult | null>(null);
   const [currentCompany, setCurrentCompany] = React.useState('');
+  const [checkingSession, setCheckingSession] = React.useState(true);
 
   React.useEffect(() => {
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
+    let active = true;
+
+    const loadSession = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
         });
-        setPage('dashboard');
-      } else {
-        setUser(null);
-        setPage('login');
+
+        if (!active) return;
+
+        if (!response.ok) {
+          setUser(null);
+          setPage('login');
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data?.success && data?.authenticated && data?.user) {
+          setUser({
+            id: data.user.id,
+            email: data.user.email || '',
+          });
+          setPage('dashboard');
+        } else {
+          setUser(null);
+          setPage('login');
+        }
+      } catch (error) {
+        console.error('Session check error:', error);
+
+        if (active) {
+          setUser(null);
+          setPage('login');
+        }
+      } finally {
+        if (active) {
+          setCheckingSession(false);
+        }
       }
-    });
+    };
+
+    loadSession();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleLogin = async (email: string) => {
-    const {
-      data: { user: authUser },
-    } = await supabase.auth.getUser();
-    if (authUser) {
-      setUser({
-        id: authUser.id,
-        email: authUser.email || '',
-      });
-      setPage('dashboard');
-    }
+  const handleLogin = (authenticatedUser: User) => {
+    setUser(authenticatedUser);
+    setPage('dashboard');
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setPage('login');
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      setResult(null);
+      setPage('login');
+    }
   };
 
   const handleNewDiagnosis = () => {
@@ -742,6 +840,17 @@ export default function ANAIAApp() {
       setPage('input');
     }
   };
+
+  if (checkingSession) {
+    return (
+      <div style={styles.authContainer}>
+        <div style={styles.authCard}>
+          <h1 style={styles.authTitle}>ANAIA</h1>
+          <p style={styles.authSubtitle}>Verificando sessão...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.app}>
