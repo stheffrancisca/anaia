@@ -16,12 +16,22 @@ interface DiagnosticResult {
   website: any;
   financial: any;
   ai_visibility: any;
+  benchmark?: any;
   competitive_position: number;
   digital_authority: number;
   abvs: any;
   gap: any;
   actions: any[];
   data_quality: any;
+  request_context?: {
+    intent?: string | null;
+    data_sources?: string[];
+    confidence?: number;
+    competitors?: string[];
+    query?: string;
+    segment?: string;
+    location?: string;
+  };
   timestamp: string;
 }
 
@@ -457,52 +467,202 @@ const DiagnosisInputPage: React.FC<{
 };
 
 const ProcessingPage: React.FC<{ company: string }> = ({ company }) => {
-  const [progress, setProgress] = React.useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
 
   React.useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress((p) => Math.min(p + Math.random() * 25, 95));
-    }, 800);
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
 
-    return () => clearInterval(timer);
+    return () => window.clearInterval(timer);
   }, []);
 
-  return (
-    <div style={styles.processingPage}>
-      <div style={styles.processingCard}>
-        <h1>Analisando {company}</h1>
-        <p>Coletando dados de múltiplas fontes...</p>
+  const steps = [
+    { label: 'Preparando diagnóstico', description: 'Validando os dados enviados', startsAt: 0 },
+    { label: 'Analisando presença digital', description: 'Estruturando sinais da empresa e website', startsAt: 4 },
+    { label: 'Consultando inteligências artificiais', description: 'OpenAI, Claude e Gemini são processadas em paralelo', startsAt: 10 },
+    { label: 'Consolidando o AI Visibility Score', description: 'Somente modelos com resposta válida entram no score', startsAt: 24 },
+    { label: 'Gerando diagnóstico executivo', description: 'Finalizando score, gaps e plano de ação', startsAt: 40 },
+  ];
 
-        <div style={styles.progressContainer}>
-          <div style={styles.progressSteps}>
-            {[
-              { label: 'CNPJ Validado', threshold: 0 },
-              { label: 'Dados Financeiros', threshold: 25 },
-              { label: 'Visibilidade IA', threshold: 50 },
-              { label: 'Análise Final', threshold: 75 },
-            ].map((step, idx) => (
-              <div key={idx} style={styles.step}>
-                <span
-                  style={
-                    progress >= step.threshold ? styles.stepDot : styles.stepDotInactive
-                  }
-                >
-                  {progress >= step.threshold ? '✓' : '○'}
-                </span>
-                <p>{step.label}</p>
-              </div>
-            ))}
+  const currentStepIndex = Math.min(
+    steps.reduce(
+      (current, step, index) => elapsedSeconds >= step.startsAt ? index : current,
+      0
+    ),
+    steps.length - 1
+  );
+
+  const estimatedProgress =
+    elapsedSeconds < 4 ? 10 + elapsedSeconds * 4 :
+    elapsedSeconds < 10 ? 26 + (elapsedSeconds - 4) * 4 :
+    elapsedSeconds < 24 ? 50 + (elapsedSeconds - 10) * 1.5 :
+    elapsedSeconds < 40 ? 71 + (elapsedSeconds - 24) * 0.9 :
+    Math.min(92, 86 + (elapsedSeconds - 40) * 0.25);
+
+  const isTakingLonger = elapsedSeconds >= 45;
+
+  const formatElapsed = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remaining = seconds % 60;
+    return minutes > 0
+      ? `${minutes}m ${remaining.toString().padStart(2, '0')}s`
+      : `${remaining}s`;
+  };
+
+  return (
+    <div
+      style={{
+        ...styles.processingPage,
+        background:
+          'radial-gradient(circle at 50% 20%, rgba(37,99,235,.08), transparent 34%), #f8fafc',
+      }}
+    >
+      <div
+        style={{
+          ...styles.processingCard,
+          width: '100%',
+          maxWidth: '720px',
+          padding: '40px',
+          textAlign: 'left',
+          boxShadow: '0 24px 70px rgba(15,23,42,.10)',
+          borderRadius: '22px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                letterSpacing: '1.4px',
+                textTransform: 'uppercase',
+                color: '#2563eb',
+                marginBottom: '8px',
+              }}
+            >
+              ANAIA · Diagnóstico em andamento
+            </div>
+
+            <h1 style={{ margin: 0, fontSize: '30px', letterSpacing: '-0.8px' }}>
+              Analisando {company}
+            </h1>
+
+            <p style={{ color: '#64748b', lineHeight: 1.6, margin: '10px 0 0', maxWidth: '520px' }}>
+              Estamos consultando fontes e modelos de IA. O tempo pode variar de acordo com a disponibilidade de cada provedor.
+            </p>
           </div>
 
-          <div style={styles.progressBar}>
+          <div
+            style={{
+              minWidth: '96px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: '#eff6ff',
+              border: '1px solid #dbeafe',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '4px' }}>TEMPO</div>
+            <strong style={{ color: '#1d4ed8', fontSize: '16px' }}>
+              {formatElapsed(elapsedSeconds)}
+            </strong>
+          </div>
+        </div>
+
+        <div style={{ marginTop: '30px', display: 'grid', gap: '10px' }}>
+          {steps.map((step, index) => {
+            const completed = index < currentStepIndex;
+            const active = index === currentStepIndex;
+
+            return (
+              <div
+                key={step.label}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '38px 1fr auto',
+                  gap: '12px',
+                  alignItems: 'center',
+                  padding: '14px',
+                  borderRadius: '14px',
+                  border: active ? '1px solid #bfdbfe' : '1px solid #e2e8f0',
+                  background: active ? '#eff6ff' : '#ffffff',
+                  opacity: index > currentStepIndex ? 0.58 : 1,
+                }}
+              >
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 800,
+                    background: completed ? '#16a34a' : active ? '#2563eb' : '#e2e8f0',
+                    color: completed || active ? '#fff' : '#64748b',
+                  }}
+                >
+                  {completed ? '✓' : active ? '•' : index + 1}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                    {step.label}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+                    {step.description}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 750,
+                    color: completed ? '#15803d' : active ? '#1d4ed8' : '#94a3b8',
+                  }}
+                >
+                  {completed ? 'Concluído' : active ? 'Em andamento' : 'Aguardando'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: '26px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '11px', color: '#64748b' }}>
+            <span>Estimativa de progresso</span>
+            <strong>{Math.round(estimatedProgress)}%</strong>
+          </div>
+
+          <div style={{ ...styles.progressBar, height: '8px', marginBottom: 0 }}>
             <div
               style={{
                 ...styles.progressFill,
-                width: `${progress}%`,
+                width: `${estimatedProgress}%`,
+                borderRadius: '999px',
+                transition: 'width .7s ease',
               }}
-            ></div>
+            />
           </div>
-          <p style={styles.progressText}>{Math.round(progress)}%</p>
+        </div>
+
+        <div
+          style={{
+            marginTop: '18px',
+            padding: '12px 14px',
+            borderRadius: '12px',
+            background: isTakingLonger ? '#fffbeb' : '#f8fafc',
+            border: `1px solid ${isTakingLonger ? '#fde68a' : '#e2e8f0'}`,
+            fontSize: '11px',
+            color: isTakingLonger ? '#92400e' : '#64748b',
+            lineHeight: 1.5,
+          }}
+        >
+          {isTakingLonger
+            ? 'A análise está levando um pouco mais de tempo porque um ou mais provedores de IA estão respondendo lentamente. O ANAIA continuará usando apenas respostas válidas.'
+            : 'Você pode permanecer nesta página. O resultado será aberto automaticamente assim que o diagnóstico terminar.'}
         </div>
       </div>
     </div>
@@ -513,119 +673,878 @@ const ResultPage: React.FC<{
   result: DiagnosticResult;
   onBack: () => void;
 }> = ({ result, onBack }) => {
-  const [activeTab, setActiveTab] = React.useState<'overview' | 'detailed'>('overview');
+  const [activeTab, setActiveTab] =
+    React.useState<'overview' | 'detailed'>('overview');
 
-  const abvsClass = result.abvs.score
-    ? result.abvs.score >= 75
-      ? 'excellent'
-      : result.abvs.score >= 60
-      ? 'good'
-      : 'fair'
-    : 'unknown';
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+
+  const formatScore = (value: unknown, digits = 1) =>
+    isFiniteNumber(value)
+      ? value.toLocaleString('pt-BR', {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        })
+      : '—';
+
+  const ai = result.ai_visibility ?? {};
+  const aiScore = isFiniteNumber(ai.score) ? ai.score : null;
+  const aiConfidence = isFiniteNumber(ai.confidence) ? ai.confidence : 0;
+  const aiCoverage = isFiniteNumber(ai.coverage) ? ai.coverage : 0;
+  const modelsRequested = isFiniteNumber(ai.models_requested) ? ai.models_requested : 3;
+  const modelsAvailable = isFiniteNumber(ai.models_available) ? ai.models_available : 0;
+  const providers = ai.providers ?? {};
+  const dimensions = ai.dimensions ?? {};
+
+  const providerConfig = [
+    { key: 'openai', name: 'OpenAI', short: 'GPT' },
+    { key: 'anthropic', name: 'Claude', short: 'CL' },
+    { key: 'gemini', name: 'Gemini', short: 'GM' },
+  ] as const;
+
+  const getProviderStatus = (provider: any) => {
+    if (provider?.success) {
+      return {
+        label: 'Online',
+        code: 'ONLINE',
+        tone: '#16a34a',
+        bg: '#f0fdf4',
+        border: '#bbf7d0',
+      };
+    }
+
+    const error = String(provider?.error || '');
+
+    if (error.includes('FORA_DO_AR_001')) {
+      return {
+        label: 'Saldo ou quota indisponível',
+        code: '001',
+        tone: '#b45309',
+        bg: '#fffbeb',
+        border: '#fde68a',
+      };
+    }
+
+    if (error.includes('FORA_DO_AR_002')) {
+      return {
+        label: 'Indisponibilidade técnica',
+        code: '002',
+        tone: '#dc2626',
+        bg: '#fef2f2',
+        border: '#fecaca',
+      };
+    }
+
+    return {
+      label: 'Indisponível',
+      code: '002',
+      tone: '#64748b',
+      bg: '#f8fafc',
+      border: '#e2e8f0',
+    };
+  };
+
+  const dimensionLabels: Record<string, string> = {
+    presence: 'Presença',
+    recommendation: 'Recomendação',
+    position: 'Posição',
+    relevance: 'Relevância',
+    competitive_share: 'Share competitivo',
+    consistency: 'Consistência',
+  };
+
+  const dimensionEntries = Object.entries(dimensions)
+    .filter(([, value]) => isFiniteNumber(value))
+    .map(([key, value]) => ({
+      key,
+      label: dimensionLabels[key] || key.replace(/_/g, ' '),
+      value: Number(value),
+    }));
+
+  const weakestDimension =
+    dimensionEntries.length > 0
+      ? [...dimensionEntries].sort((a, b) => a.value - b.value)[0]
+      : null;
+
+  const competitors =
+    result.request_context?.competitors?.filter(Boolean) ?? [];
+
+  const benchmark = result.benchmark ?? null;
+  const benchmarkRanking = Array.isArray(benchmark?.ranking)
+    ? benchmark.ranking
+    : [];
+
+  const benchmarkCompany =
+    benchmark?.company ?? null;
+
+  const benchmarkLeader =
+    benchmark?.leader ?? null;
+
+  const benchmarkHasData =
+    benchmarkRanking.length > 0;
+
+  const benchmarkHeadline = (() => {
+    if (!benchmarkHasData || !benchmarkCompany) {
+      return null;
+    }
+
+    if (benchmarkCompany.rank === 1) {
+      const secondPlace = benchmarkRanking.find(
+        (entry: any) => entry.rank === 2
+      );
+
+      if (
+        secondPlace &&
+        typeof benchmarkCompany.score === 'number' &&
+        typeof secondPlace.score === 'number'
+      ) {
+        const lead =
+          Math.round(
+            (benchmarkCompany.score - secondPlace.score) * 10
+          ) / 10;
+
+        return `Você lidera o benchmark por ${lead.toLocaleString(
+          'pt-BR',
+          {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1,
+          }
+        )} pontos.`;
+      }
+
+      return 'Você lidera o benchmark competitivo.';
+    }
+
+    if (
+      typeof benchmarkCompany.gap_to_leader === 'number' &&
+      benchmarkLeader
+    ) {
+      return `Você está ${
+        benchmarkCompany.gap_to_leader
+      .toLocaleString('pt-BR', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      })} pontos atrás de ${benchmarkLeader.name}.`;
+    }
+
+    return `Sua posição atual é #${benchmarkCompany.rank}.`;
+  })();
+
+  const abvsScore = isFiniteNumber(result.abvs?.score) ? result.abvs.score : null;
 
   const abvsLabel =
-    result.abvs.score >= 75
+    abvsScore === null
+      ? 'Sem dados suficientes'
+      : abvsScore >= 75
       ? 'Excelente'
-      : result.abvs.score >= 60
+      : abvsScore >= 60
       ? 'Bom'
-      : result.abvs.score >= 45
+      : abvsScore >= 45
       ? 'Adequado'
       : 'Limitado';
 
+  const scoreLabel =
+    aiScore === null
+      ? 'Sem leitura suficiente'
+      : aiScore >= 85
+      ? 'Visibilidade muito forte'
+      : aiScore >= 70
+      ? 'Visibilidade forte'
+      : aiScore >= 50
+      ? 'Visibilidade moderada'
+      : 'Visibilidade baixa';
+
+  const ui: Record<string, React.CSSProperties> = {
+    hero: {
+      background:
+        'radial-gradient(circle at 90% 10%, rgba(37,99,235,.18), transparent 32%), linear-gradient(135deg, #0f172a 0%, #172554 55%, #1d4ed8 140%)',
+      borderRadius: '24px',
+      padding: '32px',
+      color: '#fff',
+      boxShadow: '0 24px 70px rgba(15,23,42,.20)',
+      marginBottom: '22px',
+      overflow: 'hidden',
+    },
+    heroTop: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: '24px',
+      alignItems: 'flex-start',
+      flexWrap: 'wrap',
+    },
+    eyebrow: {
+      fontSize: '11px',
+      textTransform: 'uppercase',
+      letterSpacing: '1.5px',
+      fontWeight: 800,
+      color: '#bfdbfe',
+      marginBottom: '10px',
+    },
+    heroScore: {
+      fontSize: '72px',
+      fontWeight: 800,
+      lineHeight: .95,
+      letterSpacing: '-4px',
+      margin: '0',
+    },
+    heroLabel: {
+      marginTop: '10px',
+      fontSize: '15px',
+      color: '#dbeafe',
+    },
+    heroMetaGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, minmax(130px, 1fr))',
+      gap: '10px',
+      minWidth: '300px',
+    },
+    heroMeta: {
+      padding: '14px 16px',
+      border: '1px solid rgba(255,255,255,.14)',
+      background: 'rgba(255,255,255,.08)',
+      borderRadius: '14px',
+      backdropFilter: 'blur(8px)',
+    },
+    heroMetaLabel: {
+      display: 'block',
+      fontSize: '11px',
+      color: '#bfdbfe',
+      marginBottom: '4px',
+    },
+    heroMetaValue: {
+      fontSize: '16px',
+      fontWeight: 750,
+    },
+    section: {
+      background: '#fff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '18px',
+      padding: '24px',
+      boxShadow: '0 10px 30px rgba(15,23,42,.05)',
+    },
+    sectionHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '16px',
+      marginBottom: '18px',
+    },
+    sectionTitle: {
+      margin: 0,
+      fontSize: '18px',
+      fontWeight: 750,
+      letterSpacing: '-.2px',
+    },
+    sectionSubtitle: {
+      margin: '5px 0 0',
+      fontSize: '12px',
+      color: '#64748b',
+      lineHeight: 1.5,
+    },
+    providerGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+      gap: '14px',
+    },
+    providerCard: {
+      border: '1px solid #e2e8f0',
+      borderRadius: '16px',
+      padding: '18px',
+      background: '#fff',
+    },
+    providerTop: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '12px',
+    },
+    providerIdentity: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+    },
+    providerLogo: {
+      width: '36px',
+      height: '36px',
+      borderRadius: '10px',
+      background: '#eff6ff',
+      color: '#1d4ed8',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: 800,
+      fontSize: '11px',
+    },
+    providerScore: {
+      fontSize: '28px',
+      fontWeight: 800,
+      letterSpacing: '-1px',
+      marginTop: '18px',
+    },
+    badge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      borderRadius: '999px',
+      padding: '6px 9px',
+      fontSize: '10px',
+      fontWeight: 750,
+      whiteSpace: 'nowrap',
+    },
+    twoColumn: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: '16px',
+    },
+    metricGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+      gap: '12px',
+    },
+    metric: {
+      border: '1px solid #e2e8f0',
+      borderRadius: '14px',
+      padding: '18px',
+      background: '#f8fafc',
+    },
+    metricValue: {
+      fontSize: '26px',
+      fontWeight: 800,
+      letterSpacing: '-1px',
+      color: '#0f172a',
+    },
+    metricName: {
+      fontSize: '11px',
+      color: '#64748b',
+      marginTop: '7px',
+    },
+    insight: {
+      borderRadius: '16px',
+      padding: '18px',
+      background: '#eff6ff',
+      border: '1px solid #bfdbfe',
+    },
+    competitorList: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '9px',
+    },
+    competitorChip: {
+      border: '1px solid #dbeafe',
+      background: '#eff6ff',
+      color: '#1e40af',
+      borderRadius: '999px',
+      padding: '9px 12px',
+      fontSize: '12px',
+      fontWeight: 650,
+    },
+    rankingList: {
+      display: 'grid',
+      gap: '10px',
+    },
+    rankingRow: {
+      display: 'grid',
+      gridTemplateColumns: '42px minmax(0, 1fr) 70px 64px',
+      gap: '12px',
+      alignItems: 'center',
+      padding: '13px 14px',
+      borderRadius: '14px',
+      border: '1px solid #e2e8f0',
+      background: '#ffffff',
+    },
+    rankingPosition: {
+      width: '32px',
+      height: '32px',
+      borderRadius: '10px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: 800,
+      fontSize: '12px',
+      background: '#f1f5f9',
+      color: '#475569',
+    },
+    rankingName: {
+      fontSize: '13px',
+      fontWeight: 750,
+      color: '#0f172a',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+    },
+    rankingScore: {
+      textAlign: 'right',
+      fontSize: '18px',
+      fontWeight: 800,
+      color: '#0f172a',
+    },
+    rankingGap: {
+      textAlign: 'right',
+      fontSize: '11px',
+      fontWeight: 700,
+      color: '#64748b',
+    },
+    rankingSummary: {
+      marginTop: '14px',
+      padding: '12px 14px',
+      borderRadius: '12px',
+      background: '#eff6ff',
+      border: '1px solid #bfdbfe',
+      color: '#1e3a8a',
+      fontSize: '12px',
+      fontWeight: 650,
+      lineHeight: 1.5,
+    },
+    dimensionRow: {
+      display: 'grid',
+      gridTemplateColumns: '135px 1fr 48px',
+      gap: '12px',
+      alignItems: 'center',
+      fontSize: '12px',
+      marginBottom: '14px',
+    },
+    dimensionTrack: {
+      height: '8px',
+      background: '#eef2f7',
+      borderRadius: '999px',
+      overflow: 'hidden',
+    },
+    dimensionFill: {
+      height: '100%',
+      borderRadius: '999px',
+      background: 'linear-gradient(90deg, #2563eb, #60a5fa)',
+    },
+    muted: {
+      color: '#64748b',
+      fontSize: '12px',
+      lineHeight: 1.55,
+    },
+  };
+
   return (
-    <div style={styles.resultPage}>
+    <div style={{ ...styles.resultPage, maxWidth: '1120px' }}>
       <button onClick={onBack} style={styles.backButton}>
         ← Novo Diagnóstico
       </button>
 
-      {/* ABVS Card */}
-      <div style={styles.abvsCard}>
-        <div style={styles.abvsScore}>
-          <div style={styles.abvsNumber}>{result.abvs.score || 'N/A'}</div>
-          <div style={styles.abvsLabel}>{abvsLabel}</div>
-        </div>
-        <div style={styles.abvsDetails}>
-          <div style={styles.detailItem}>
-            <span>Confiabilidade</span>
-            <strong>{result.abvs.confidence}%</strong>
+      <div style={ui.hero}>
+        <div style={ui.heroTop}>
+          <div>
+            <div style={ui.eyebrow}>ANAIA AI Visibility Command Center</div>
+            <div style={ui.heroScore}>{formatScore(aiScore)}</div>
+            <div style={ui.heroLabel}>{scoreLabel}</div>
           </div>
-          <div style={styles.detailItem}>
-            <span>Cobertura de Dados</span>
-            <strong>{result.abvs.coverage}%</strong>
+
+          <div style={ui.heroMetaGrid}>
+            <div style={ui.heroMeta}>
+              <span style={ui.heroMetaLabel}>Cobertura de IAs</span>
+              <span style={ui.heroMetaValue}>
+                {modelsAvailable}/{modelsRequested} · {formatScore(aiCoverage)}%
+              </span>
+            </div>
+
+            <div style={ui.heroMeta}>
+              <span style={ui.heroMetaLabel}>Confiança</span>
+              <span style={ui.heroMetaValue}>{formatScore(aiConfidence)}%</span>
+            </div>
+
+            <div style={ui.heroMeta}>
+              <span style={ui.heroMetaLabel}>ABVS</span>
+              <span style={ui.heroMetaValue}>{formatScore(abvsScore, 0)}</span>
+            </div>
+
+            <div style={ui.heroMeta}>
+              <span style={ui.heroMetaLabel}>Leitura</span>
+              <span style={ui.heroMetaValue}>{abvsLabel}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
       <div style={styles.tabs}>
         <button
           onClick={() => setActiveTab('overview')}
           style={{
             ...styles.tab,
             borderBottom:
-              activeTab === 'overview' ? '2px solid #2563eb' : 'none',
-            color: activeTab === 'overview' ? '#2563eb' : '#666',
+              activeTab === 'overview' ? '2px solid #2563eb' : '2px solid transparent',
+            color: activeTab === 'overview' ? '#2563eb' : '#64748b',
           }}
         >
-          Visão Geral
+          Command Center
         </button>
+
         <button
           onClick={() => setActiveTab('detailed')}
           style={{
             ...styles.tab,
             borderBottom:
-              activeTab === 'detailed' ? '2px solid #2563eb' : 'none',
-            color: activeTab === 'detailed' ? '#2563eb' : '#666',
+              activeTab === 'detailed' ? '2px solid #2563eb' : '2px solid transparent',
+            color: activeTab === 'detailed' ? '#2563eb' : '#64748b',
           }}
         >
-          Detalhado
+          Diagnóstico detalhado
         </button>
       </div>
 
       {activeTab === 'overview' && (
-        <div style={styles.tabContent}>
-          {/* Gap */}
-          {result.gap.is_available && (
-            <div style={styles.sectionCard}>
-              <h3>Gap IA-Financeiro</h3>
+        <div style={{ display: 'grid', gap: '16px' }}>
+          <div style={ui.section}>
+            <div style={ui.sectionHeader}>
+              <div>
+                <h3 style={ui.sectionTitle}>Monitoramento multi-IA</h3>
+                <p style={ui.sectionSubtitle}>
+                  Veja quais modelos participaram do score consolidado desta análise.
+                </p>
+              </div>
+              <span
+                style={{
+                  ...ui.badge,
+                  color: modelsAvailable > 0 ? '#166534' : '#991b1b',
+                  background: modelsAvailable > 0 ? '#f0fdf4' : '#fef2f2',
+                  border: `1px solid ${modelsAvailable > 0 ? '#bbf7d0' : '#fecaca'}`,
+                }}
+              >
+                {modelsAvailable} de {modelsRequested} disponíveis
+              </span>
+            </div>
+
+            <div style={ui.providerGrid}>
+              {providerConfig.map(({ key, name, short }) => {
+                const provider = providers?.[key];
+                const status = getProviderStatus(provider);
+
+                return (
+                  <div key={key} style={ui.providerCard}>
+                    <div style={ui.providerTop}>
+                      <div style={ui.providerIdentity}>
+                        <div style={ui.providerLogo}>{short}</div>
+                        <div>
+                          <div style={{ fontWeight: 750, fontSize: '14px' }}>{name}</div>
+                          <div style={{ color: '#94a3b8', fontSize: '10px', marginTop: '2px' }}>
+                            {provider?.model || 'Modelo não disponível'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <span
+                        style={{
+                          ...ui.badge,
+                          color: status.tone,
+                          background: status.bg,
+                          border: `1px solid ${status.border}`,
+                        }}
+                      >
+                        {status.code === 'ONLINE' ? '● Online' : `● Fora do ar ${status.code}`}
+                      </span>
+                    </div>
+
+                    <div style={ui.providerScore}>
+                      {provider?.success ? formatScore(provider.score) : '—'}
+                    </div>
+
+                    <div style={{ ...ui.muted, marginTop: '5px' }}>
+                      {provider?.success
+                        ? `${provider.observations_count ?? 0} observações válidas`
+                        : status.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={ui.twoColumn}>
+            <div style={ui.section}>
+              <div style={ui.sectionHeader}>
+                <div>
+                  <h3 style={ui.sectionTitle}>AI Signals</h3>
+                  <p style={ui.sectionSubtitle}>
+                    Os sinais que explicam a nota consolidada.
+                  </p>
+                </div>
+              </div>
+
+              {dimensionEntries.length > 0 ? (
+                dimensionEntries.map((item) => (
+                  <div key={item.key} style={ui.dimensionRow}>
+                    <span>{item.label}</span>
+                    <div style={ui.dimensionTrack}>
+                      <div
+                        style={{
+                          ...ui.dimensionFill,
+                          width: `${Math.min(Math.max(item.value, 0), 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <strong style={{ textAlign: 'right' }}>{formatScore(item.value, 0)}</strong>
+                  </div>
+                ))
+              ) : (
+                <p style={ui.muted}>Sem dimensões suficientes nesta análise.</p>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gap: '16px' }}>
+              <div style={ui.section}>
+                <h3 style={ui.sectionTitle}>Principal oportunidade</h3>
+
+                {weakestDimension ? (
+                  <div style={{ ...ui.insight, marginTop: '16px' }}>
+                    <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: 800 }}>
+                      MENOR SINAL DA ANÁLISE
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '24px',
+                        fontWeight: 800,
+                        marginTop: '6px',
+                        letterSpacing: '-.7px',
+                      }}
+                    >
+                      {weakestDimension.label} · {formatScore(weakestDimension.value, 0)}
+                    </div>
+                    <p style={{ ...ui.muted, color: '#334155', marginBottom: 0 }}>
+                      É o ponto com maior espaço relativo para melhoria nesta leitura.
+                    </p>
+                  </div>
+                ) : (
+                  <p style={ui.muted}>Ainda não há sinais suficientes para priorizar uma oportunidade.</p>
+                )}
+              </div>
+
+              <div style={ui.section}>
+                <div style={ui.sectionHeader}>
+                  <div>
+                    <h3 style={ui.sectionTitle}>AI Competitive Benchmark</h3>
+                    <p style={ui.sectionSubtitle}>
+                      Ranking com a mesma metodologia aplicada à empresa e aos concorrentes.
+                    </p>
+                  </div>
+
+                  {benchmarkHasData && benchmarkCompany?.rank && (
+                    <span
+                      style={{
+                        ...ui.badge,
+                        color:
+                          benchmarkCompany.rank === 1
+                            ? '#166534'
+                            : '#1d4ed8',
+                        background:
+                          benchmarkCompany.rank === 1
+                            ? '#f0fdf4'
+                            : '#eff6ff',
+                        border:
+                          benchmarkCompany.rank === 1
+                            ? '1px solid #bbf7d0'
+                            : '1px solid #bfdbfe',
+                      }}
+                    >
+                      Sua posição · #{benchmarkCompany.rank}
+                    </span>
+                  )}
+                </div>
+
+                {benchmarkHasData ? (
+                  <>
+                    <div style={ui.rankingList}>
+                      {benchmarkRanking.map((entry: any) => {
+                        const isPrimary = entry?.is_primary === true;
+                        const available =
+                          entry?.status === 'available' &&
+                          typeof entry?.score === 'number';
+
+                        return (
+                          <div
+                            key={`${entry.name}-${entry.rank}`}
+                            style={{
+                              ...ui.rankingRow,
+                              background: isPrimary
+                                ? '#eff6ff'
+                                : '#ffffff',
+                              border: isPrimary
+                                ? '1px solid #93c5fd'
+                                : '1px solid #e2e8f0',
+                            }}
+                          >
+                            <div
+                              style={{
+                                ...ui.rankingPosition,
+                                background:
+                                  entry.rank === 1
+                                    ? '#dbeafe'
+                                    : '#f1f5f9',
+                                color:
+                                  entry.rank === 1
+                                    ? '#1d4ed8'
+                                    : '#475569',
+                              }}
+                            >
+                              #{entry.rank ?? '—'}
+                            </div>
+
+                            <div style={{ minWidth: 0 }}>
+                              <div style={ui.rankingName}>
+                                {entry.name}
+                                {isPrimary && (
+                                  <span
+                                    style={{
+                                      marginLeft: '7px',
+                                      color: '#2563eb',
+                                      fontSize: '10px',
+                                      fontWeight: 800,
+                                    }}
+                                  >
+                                    VOCÊ
+                                  </span>
+                                )}
+                              </div>
+
+                              <div
+                                style={{
+                                  ...ui.muted,
+                                  marginTop: '3px',
+                                }}
+                              >
+                                {available
+                                  ? `${entry.models_available}/${entry.models_requested} IAs disponíveis`
+                                  : 'Sem dados suficientes'}
+                              </div>
+                            </div>
+
+                            <div style={ui.rankingScore}>
+                              {available
+                                ? formatScore(entry.score)
+                                : '—'}
+                            </div>
+
+                            <div style={ui.rankingGap}>
+                              {available &&
+                              typeof entry.gap_to_leader === 'number'
+                                ? entry.gap_to_leader === 0
+                                  ? 'Líder'
+                                  : `-${formatScore(
+                                      entry.gap_to_leader
+                                    )}`
+                                : '—'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {benchmarkHeadline && (
+                      <div style={ui.rankingSummary}>
+                        {benchmarkHeadline}
+                      </div>
+                    )}
+
+                    {benchmark?.requested_competitors >
+                      benchmark?.analyzed_competitors && (
+                      <p
+                        style={{
+                          ...ui.muted,
+                          marginBottom: 0,
+                          marginTop: '12px',
+                        }}
+                      >
+                        Alguns concorrentes não puderam ser pontuados porque não houve resposta válida suficiente dos provedores.
+                      </p>
+                    )}
+                  </>
+                ) : competitors.length > 0 ? (
+                  <>
+                    <div style={ui.competitorList}>
+                      {competitors.map((competitor) => (
+                        <span key={competitor} style={ui.competitorChip}>
+                          {competitor}
+                        </span>
+                      ))}
+                    </div>
+
+                    <p
+                      style={{
+                        ...ui.muted,
+                        marginBottom: 0,
+                        marginTop: '14px',
+                      }}
+                    >
+                      Os concorrentes foram informados, mas o benchmark não retornou dados suficientes nesta execução.
+                    </p>
+                  </>
+                ) : (
+                  <p style={ui.muted}>
+                    Nenhum concorrente foi informado. No próximo diagnóstico,
+                    adicione até 3 concorrentes para gerar o ranking competitivo.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div style={ui.section}>
+            <div style={ui.sectionHeader}>
+              <div>
+                <h3 style={ui.sectionTitle}>Visão executiva</h3>
+                <p style={ui.sectionSubtitle}>
+                  Leitura rápida dos principais sinais de negócio.
+                </p>
+              </div>
+            </div>
+
+            <div style={ui.metricGrid}>
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{formatScore(aiScore)}</div>
+                <div style={ui.metricName}>AI Visibility Score</div>
+              </div>
+
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>
+                  {isFiniteNumber(result.financial?.score)
+                    ? formatScore(result.financial.score, 0)
+                    : 'N/A'}
+                </div>
+                <div style={ui.metricName}>Força financeira</div>
+              </div>
+
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{formatScore(result.competitive_position, 0)}</div>
+                <div style={ui.metricName}>Posição competitiva estimada</div>
+              </div>
+
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{formatScore(result.digital_authority, 0)}</div>
+                <div style={ui.metricName}>Autoridade digital</div>
+              </div>
+            </div>
+          </div>
+
+          {result.gap?.is_available && (
+            <div style={ui.section}>
+              <h3 style={ui.sectionTitle}>Gap IA-Financeiro</h3>
               <p style={styles.sectionValue}>{result.gap.gap} pontos</p>
               <p style={styles.sectionDescription}>{result.gap.interpretation}</p>
             </div>
           )}
 
-          {/* Metrics Grid */}
-          <div style={styles.metricsGrid}>
-            <div style={styles.metricCard}>
-              <div style={styles.metricScore}>{result.ai_visibility.score}</div>
-              <p style={styles.metricLabel}>Visibilidade IA</p>
-            </div>
-            <div style={styles.metricCard}>
-              <div style={styles.metricScore}>{result.financial.score || 'N/A'}</div>
-              <p style={styles.metricLabel}>Força Financeira</p>
-            </div>
-            <div style={styles.metricCard}>
-              <div style={styles.metricScore}>{result.competitive_position}</div>
-              <p style={styles.metricLabel}>Posição Competitiva</p>
-            </div>
-            <div style={styles.metricCard}>
-              <div style={styles.metricScore}>{result.digital_authority}</div>
-              <p style={styles.metricLabel}>Autoridade Digital</p>
-            </div>
-          </div>
+          {result.actions?.length > 0 && (
+            <div style={ui.section}>
+              <div style={ui.sectionHeader}>
+                <div>
+                  <h3 style={ui.sectionTitle}>Plano de ação</h3>
+                  <p style={ui.sectionSubtitle}>
+                    Prioridades sugeridas a partir dos sinais disponíveis.
+                  </p>
+                </div>
+              </div>
 
-          {/* Action Plan */}
-          {result.actions.length > 0 && (
-            <div style={styles.sectionCard}>
-              <h3>Plano de Ação</h3>
               <div style={styles.actionList}>
                 {result.actions.map((action, idx) => (
                   <div key={idx} style={styles.actionItem}>
                     <div style={styles.actionPriority}>{action.priority}</div>
                     <div style={styles.actionContent}>
                       <p style={styles.actionTitle}>{action.title}</p>
-                      <p style={styles.actionDescription}>
-                        {action.description}
-                      </p>
+                      <p style={styles.actionDescription}>{action.description}</p>
                     </div>
                     <span style={styles.actionImpact}>{action.impact}</span>
                   </div>
@@ -637,67 +1556,45 @@ const ResultPage: React.FC<{
       )}
 
       {activeTab === 'detailed' && (
-        <div style={styles.tabContent}>
-          {/* AI Visibility Details */}
-          <div style={styles.sectionCard}>
-            <h3>Visibilidade em IA — Detalhes</h3>
-            <div style={styles.dimensionsList}>
-              {Object.entries(result.ai_visibility?.dimensions ?? {}).map(
-                ([key, value]) => {
-                  const numericValue =
-                    typeof value === 'number' && Number.isFinite(value)
-                      ? value
-                      : 0;
-
-                  const displayValue =
-                    typeof value === 'number' && Number.isFinite(value)
-                      ? String(Math.round(value))
-                      : value === null || value === undefined
-                      ? 'N/A'
-                      : String(value);
-
-                  return (
-                    <div key={key} style={styles.dimensionRow}>
-                      <span style={{ textTransform: 'capitalize' }}>
-                        {key.replace(/_/g, ' ')}
-                      </span>
-                      <div style={styles.dimensionBar}>
-                        <div
-                          style={{
-                            ...styles.dimensionFill,
-                            width: `${Math.min(Math.max(numericValue, 0), 100)}%`,
-                          }}
-                        />
-                      </div>
-                      <span>{displayValue}</span>
-                    </div>
-                  );
-                }
-              )}
+        <div style={{ display: 'grid', gap: '16px' }}>
+          <div style={ui.section}>
+            <div style={ui.sectionHeader}>
+              <div>
+                <h3 style={ui.sectionTitle}>Metodologia da análise</h3>
+                <p style={ui.sectionSubtitle}>
+                  Transparência sobre cobertura, consistência e profundidade.
+                </p>
+              </div>
             </div>
-            <p style={styles.dataNote}>
-              Baseado em: {result.ai_visibility.observations_count} observações
-            </p>
+
+            <div style={ui.metricGrid}>
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{formatScore(aiCoverage)}%</div>
+                <div style={ui.metricName}>Cobertura de IAs</div>
+              </div>
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{formatScore(aiConfidence)}%</div>
+                <div style={ui.metricName}>Confiança</div>
+              </div>
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>
+                  {formatScore(ai.cross_model_consistency, 0)}
+                </div>
+                <div style={ui.metricName}>Consistência entre modelos</div>
+              </div>
+              <div style={ui.metric}>
+                <div style={ui.metricValue}>{ai.observations_count ?? 0}</div>
+                <div style={ui.metricName}>Observações válidas</div>
+              </div>
+            </div>
           </div>
 
-          {/* Financial Details */}
-          {result.financial.score !== null && (
-            <div style={styles.sectionCard}>
-              <h3>Força Financeira — Detalhes</h3>
-              <p style={styles.dataNote}>
-                {result.financial.interpretation}
-              </p>
-              <p style={styles.dataNote}>
-                Cobertura: {result.financial.coverage}% |{' '}
-                {result.financial.data_type.join(', ')}
-              </p>
-            </div>
-          )}
-
-          {/* Company Data */}
-          <div style={styles.sectionCard}>
-            <h3>Dados da Empresa</h3>
-            <div style={styles.dataGrid}>
+          <div style={ui.section}>
+            <h3 style={ui.sectionTitle}>Dados da empresa</h3>
+            <div style={{ ...styles.dataGrid, marginTop: '18px' }}>
+              <div>
+                <strong>Empresa:</strong> {result.company?.company_name || 'N/A'}
+              </div>
               <div>
                 <strong>CNPJ:</strong> {result.company?.cnpj || 'N/A'}
               </div>
@@ -709,6 +1606,26 @@ const ResultPage: React.FC<{
               </div>
               <div>
                 <strong>CNAE:</strong> {result.company?.primary_cnae || 'N/A'}
+              </div>
+            </div>
+          </div>
+
+          <div style={ui.section}>
+            <h3 style={ui.sectionTitle}>Qualidade dos dados</h3>
+            <div style={{ ...styles.dataGrid, marginTop: '18px' }}>
+              <div>
+                <strong>Empresa:</strong> {result.data_quality?.company_data || 'N/A'}
+              </div>
+              <div>
+                <strong>Website:</strong> {result.data_quality?.website_data || 'N/A'}
+              </div>
+              <div>
+                <strong>Modelos disponíveis:</strong>{' '}
+                {result.data_quality?.ai_models_available ?? modelsAvailable}/{modelsRequested}
+              </div>
+              <div>
+                <strong>Cobertura IA:</strong>{' '}
+                {formatScore(result.data_quality?.ai_coverage ?? aiCoverage)}%
               </div>
             </div>
           </div>
@@ -809,6 +1726,9 @@ export default function ANAIAApp() {
     setCurrentCompany(data.query || data.company_name || data.website || data.cnpj || 'sua consulta');
     setPage('processing');
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 110000);
+
     try {
       const response = await fetch('/api/diagnose', {
         method: 'POST',
@@ -816,6 +1736,7 @@ export default function ANAIAApp() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(data),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -824,12 +1745,37 @@ export default function ANAIAApp() {
       }
 
       const diagnosticResult = await response.json();
-      setResult(diagnosticResult);
+
+      const enrichedResult: DiagnosticResult = {
+        ...diagnosticResult,
+        request_context: {
+          ...(diagnosticResult.request_context || {}),
+          competitors: data.competitors || [],
+          query: data.query,
+          segment: data.segment,
+          location: data.location,
+        },
+      };
+
+      setResult(enrichedResult);
       setPage('result');
     } catch (error) {
       console.error('Diagnosis error:', error);
+
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setPage('input');
+        alert('A análise ultrapassou 110 segundos. Tente novamente em alguns instantes.');
+        return;
+      }
+
       setPage('dashboard');
-      alert(error instanceof Error ? error.message : 'Erro ao processar diagnóstico');
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Erro ao processar diagnóstico'
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 
