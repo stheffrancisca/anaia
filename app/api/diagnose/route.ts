@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { RealCompanyDataProvider, RealWebsiteAnalysisProvider } from '@/lib/providers';
 import {
@@ -6,7 +7,6 @@ import {
   GapCalculator,
   ActionPlanGenerator,
 } from '@/lib/scoring';
-import { supabaseAdmin } from '@/lib/supabase';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -389,8 +389,6 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    // Mantém o import sem alterar persistência neste passo.
-    void supabaseAdmin;
 
     return NextResponse.json(diagnostic);
   } catch (error) {
