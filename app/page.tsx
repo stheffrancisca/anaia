@@ -37,6 +37,29 @@ interface DiagnosticResult {
 
 type Page = 'login' | 'signup' | 'dashboard' | 'input' | 'processing' | 'result';
 
+async function readApiPayload(response: Response) {
+  const rawText = await response.text();
+
+  if (!rawText) {
+    return {
+      data: null as any,
+      rawText: '',
+    };
+  }
+
+  try {
+    return {
+      data: JSON.parse(rawText),
+      rawText,
+    };
+  } catch {
+    return {
+      data: null as any,
+      rawText,
+    };
+  }
+}
+
 // ============================================================================
 // COMPONENTS
 // ============================================================================
@@ -58,10 +81,14 @@ const LoginPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => 
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await response.json();
+    const { data, rawText } = await readApiPayload(response);
 
     if (!response.ok || !data?.success || !data?.user) {
-      throw new Error(data?.error || 'Não foi possível realizar o login.');
+      throw new Error(
+        data?.error ||
+          rawText ||
+          `Não foi possível realizar o login. HTTP ${response.status}`
+      );
     }
 
     onLogin({
@@ -102,10 +129,14 @@ const LoginPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => 
           body: JSON.stringify({ email, password }),
         });
 
-        const data = await response.json();
+        const { data, rawText } = await readApiPayload(response);
 
         if (!response.ok || !data?.success) {
-          throw new Error(data?.error || 'Erro ao criar conta.');
+          throw new Error(
+            data?.error ||
+              rawText ||
+              `Erro ao criar conta. HTTP ${response.status}`
+          );
         }
 
         if (data.requires_email_confirmation) {
@@ -1665,7 +1696,7 @@ export default function ANAIAApp() {
           return;
         }
 
-        const data = await response.json();
+        const { data } = await readApiPayload(response);
 
         if (data?.success && data?.authenticated && data?.user) {
           setUser({
@@ -1739,12 +1770,26 @@ export default function ANAIAApp() {
         signal: controller.signal,
       });
 
+      const { data: responseData, rawText } =
+        await readApiPayload(response);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao processar diagnóstico');
+        const serverMessage =
+          responseData?.error ||
+          responseData?.message ||
+          rawText ||
+          `Erro HTTP ${response.status} ao processar diagnóstico`;
+
+        throw new Error(serverMessage);
       }
 
-      const diagnosticResult = await response.json();
+      if (!responseData) {
+        throw new Error(
+          'O servidor respondeu em um formato inesperado. Tente novamente.'
+        );
+      }
+
+      const diagnosticResult = responseData;
 
       const enrichedResult: DiagnosticResult = {
         ...diagnosticResult,
@@ -1769,10 +1814,19 @@ export default function ANAIAApp() {
       }
 
       setPage('dashboard');
-      alert(
+
+      const message =
         error instanceof Error
           ? error.message
-          : 'Erro ao processar diagnóstico'
+          : 'Erro ao processar diagnóstico';
+
+      alert(
+        message.includes('An error occurred') ||
+        message.includes('FUNCTION_INVOCATION') ||
+        message.includes('Gateway') ||
+        message.includes('504')
+          ? 'O servidor não conseguiu concluir a análise em produção. Tente novamente em alguns instantes.'
+          : message
       );
     } finally {
       window.clearTimeout(timeoutId);
