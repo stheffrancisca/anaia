@@ -1,8 +1,43 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase-server';
+import {
+  NextRequest,
+  NextResponse,
+} from 'next/server';
 
+import {
+  createSupabaseServerClient,
+} from '@/lib/supabase-server';
+
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function clearAuthCookies(
+  response: NextResponse
+) {
+  const cookieOptions = {
+    httpOnly: true,
+    secure:
+      process.env.NODE_ENV ===
+      'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 0,
+  };
+
+  response.cookies.set(
+    'anaia_access_token',
+    '',
+    cookieOptions
+  );
+
+  response.cookies.set(
+    'anaia_refresh_token',
+    '',
+    cookieOptions
+  );
+
+  return response;
+}
 
 export async function GET(
   request: NextRequest
@@ -32,14 +67,21 @@ export async function GET(
     const {
       data,
       error,
-    } = await supabase.auth.getUser(
-      accessToken
-    );
+    } =
+      await supabase.auth.getUser(
+        accessToken
+      );
 
     if (
       error ||
-      !data.user
+      !data?.user
     ) {
+      console.warn(
+        '[AUTH ME] Invalid session:',
+        error?.message ||
+          'User not found'
+      );
+
       const response =
         NextResponse.json(
           {
@@ -52,35 +94,9 @@ export async function GET(
           }
         );
 
-      response.cookies.set(
-        'anaia_access_token',
-        '',
-        {
-          httpOnly: true,
-          secure:
-            process.env.NODE_ENV ===
-            'production',
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 0,
-        }
+      return clearAuthCookies(
+        response
       );
-
-      response.cookies.set(
-        'anaia_refresh_token',
-        '',
-        {
-          httpOnly: true,
-          secure:
-            process.env.NODE_ENV ===
-            'production',
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 0,
-        }
-      );
-
-      return response;
     }
 
     return NextResponse.json(
@@ -90,17 +106,27 @@ export async function GET(
 
         user: {
           id: data.user.id,
+
           email:
-            data.user.email || '',
+            data.user.email ||
+            '',
+
+          created_at:
+            data.user.created_at ||
+            null,
         },
       },
       {
         status: 200,
+        headers: {
+          'Cache-Control':
+            'no-store, no-cache, must-revalidate',
+        },
       }
     );
   } catch (error) {
     console.error(
-      '[AUTH ME]',
+      '[AUTH ME] Unexpected error:',
       error
     );
 
@@ -109,11 +135,16 @@ export async function GET(
         success: false,
         authenticated: false,
         user: null,
+
         error:
           'Erro ao verificar sessão.',
       },
       {
         status: 500,
+        headers: {
+          'Cache-Control':
+            'no-store, no-cache, must-revalidate',
+        },
       }
     );
   }

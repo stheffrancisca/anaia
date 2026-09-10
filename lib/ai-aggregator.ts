@@ -11,6 +11,53 @@ import { analyzeWithGemini } from './ai-providers/gemini';
 
 const METHODOLOGY_VERSION = 'ai-visibility-v1.1';
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 30000;
+
+function getProviderTimeoutMs(): number {
+  const configured = Number(
+    process.env.AI_PROVIDER_TIMEOUT_MS
+  );
+
+  if (
+    Number.isFinite(configured) &&
+    configured >= 5000 &&
+    configured <= 120000
+  ) {
+    return Math.floor(configured);
+  }
+
+  return DEFAULT_PROVIDER_TIMEOUT_MS;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  providerName: string
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new Error(
+          `${providerName} excedeu o tempo limite de ${timeoutMs}ms`
+        )
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      promise,
+      timeoutPromise,
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 /**
  * Códigos públicos de indisponibilidade:
  *
@@ -432,11 +479,26 @@ export async function analyzeWithAllModels(
     Promise.allSettled garante que
     uma falha não derrube as outras.
   */
+  const providerTimeoutMs =
+    getProviderTimeoutMs();
+
   const settledResults =
     await Promise.allSettled([
-      analyzeWithOpenAI(input),
-      analyzeWithAnthropic(input),
-      analyzeWithGemini(input),
+      withTimeout(
+        analyzeWithOpenAI(input),
+        providerTimeoutMs,
+        'OpenAI'
+      ),
+      withTimeout(
+        analyzeWithAnthropic(input),
+        providerTimeoutMs,
+        'Anthropic'
+      ),
+      withTimeout(
+        analyzeWithGemini(input),
+        providerTimeoutMs,
+        'Gemini'
+      ),
     ]);
 
   const providerResults:
