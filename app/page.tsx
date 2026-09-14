@@ -81,6 +81,7 @@ interface HistoryResponse {
 
 type Page =
   | 'landing'
+  | 'public-research'
   | 'login'
   | 'signup'
   | 'home'
@@ -293,7 +294,8 @@ const LoginPage: React.FC<{ onLogin: (user: User) => void }> = ({ onLogin }) => 
 
 const PublicLandingPage: React.FC<{
   onLogin: () => void;
-}> = ({ onLogin }) => {
+  onPublicResearch: () => void;
+}> = ({ onLogin, onPublicResearch }) => {
   const scrollToHowItWorks = () => {
     document
       .getElementById('como-funciona')
@@ -362,6 +364,14 @@ const PublicLandingPage: React.FC<{
           </button>
 
           <nav style={styles.publicNav}>
+            <button
+              type="button"
+              style={styles.publicNavLink}
+              onClick={onPublicResearch}
+            >
+              Pesquisa
+            </button>
+
             <button
               type="button"
               style={styles.publicNavLink}
@@ -826,6 +836,1414 @@ const PublicLandingPage: React.FC<{
           </div>
         </div>
       </footer>
+    </div>
+  );
+};
+
+
+const PUBLIC_RESEARCH_SECTORS = [
+  'Fintechs',
+  'Bancos',
+  'E-commerce',
+  'Cosméticos',
+  'Educação',
+  'SaaS',
+  'Varejo',
+  'Seguros',
+  'Saúde',
+  'Tecnologia',
+];
+
+type PublicResearchData = {
+  success: boolean;
+  sector: string;
+  selected_date?: string;
+  is_fallback?: boolean;
+  fallback_reason?: string | null;
+  requested_date?: string;
+  comparison_date?: string;
+  sector_trends_today?: {
+    disclaimer: string;
+    total_observations: number;
+    highlight?: {
+      sector: string;
+      observation_count: number;
+      share: number | null;
+      direction_rate: number | null;
+      average_recommendation: number | null;
+      explanation: string;
+    } | null;
+    ranking: Array<{
+      sector: string;
+      observation_count: number;
+      share_of_observed_ai_activity: number | null;
+      direction_rate: number | null;
+      average_recommendation: number | null;
+      rank: number;
+      by_hour: Array<{
+        hour: number;
+        label: string;
+        count: number;
+      }>;
+    }>;
+  };
+  sample?: {
+    current_diagnostics: number;
+    previous_diagnostics: number;
+    valid_observations: number;
+    textual_responses: number;
+  };
+  kpis?: {
+    research_growth_percent: number | null;
+    direction_rate_percent: number | null;
+    top_ai: { name: string; rate: number | null } | null;
+    sector_spotlight: { name: string; recommendation: number | null } | null;
+  };
+  charts?: {
+    most_searched: Array<{
+      name: string;
+      count: number;
+      share: number | null;
+      rank: number;
+      primary_searches: number;
+    }>;
+    most_cited_by_ai: Array<{
+      name: string;
+      citation_count: number;
+      citation_rate: number | null;
+      rank: number;
+    }>;
+    most_recommended: Array<{ name: string; recommendation: number; samples: number }>;
+    recommendation_by_ai: Array<{
+      provider: string;
+      label: string;
+      recommendation_rate: number | null;
+      observations: number;
+    }>;
+    growing_searches: Array<{
+      name: string;
+      current_count: number;
+      previous_count: number;
+      growth: number | null;
+      is_new: boolean;
+    }>;
+    research_by_hour: Array<{
+      hour: number;
+      label: string;
+      count: number;
+    }>;
+    recommendation_evolution: Array<{
+      name: string;
+      points: Array<{
+        week: number;
+        value: number | null;
+        samples: number;
+      }>;
+    }>;
+    comparison_by_model: Array<{
+      name: string;
+      openai: number | null;
+      gemini: number | null;
+      anthropic: number | null;
+      benchmark_score: number | null;
+    }>;
+    dispersion: Array<{
+      name: string;
+      min: number | null;
+      max: number | null;
+      mean: number | null;
+      median: number | null;
+      samples: number;
+      source?: 'observations' | 'benchmark' | 'none';
+    }>;
+  };
+  error?: string;
+};
+
+const PublicResearchPage: React.FC<{
+  onBackHome: () => void;
+  onLogin: () => void;
+}> = ({ onBackHome, onLogin }) => {
+  const [sector, setSector] = React.useState('Fintechs');
+
+  const todayText = new Intl.DateTimeFormat(
+    'en-CA',
+    {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }
+  ).format(new Date());
+
+  const todayLabel = new Date(
+    `${todayText}T12:00:00-03:00`
+  ).toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  });
+
+  const [data, setData] = React.useState<PublicResearchData | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+
+  const resolvedDataDateLabel = data?.selected_date
+    ? new Date(
+        `${data.selected_date}T12:00:00-03:00`
+      ).toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+    : null;
+
+  const dMinusOneLabel = data?.selected_date
+    ? new Date(
+        `${data.selected_date}T12:00:00-03:00`
+      ).toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+    : 'carregando...';
+
+  React.useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      setLoading(true);
+      setError('');
+
+      try {
+        const response = await fetch(
+          `/api/public-research?sector=${encodeURIComponent(sector)}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload?.success) {
+          throw new Error(payload?.error || `Erro HTTP ${response.status}`);
+        }
+
+        if (active) setData(payload);
+      } catch (fetchError) {
+        if (!active) return;
+        setData(null);
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : 'Erro ao carregar pesquisa pública.'
+        );
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [sector]);
+
+  const formatPercent = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? `${Math.round(value)}%`
+      : '—';
+
+  const formatGrowth = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? `${value > 0 ? '+' : ''}${Math.round(value)}%`
+      : '—';
+
+  const maxValue = (items: number[]) =>
+    Math.max(1, ...items.filter((value) => Number.isFinite(value)));
+
+  const ui: Record<string, React.CSSProperties> = {
+    page: {
+      minHeight: '100vh',
+      background:
+        'radial-gradient(circle at 50% 0%, rgba(37,99,235,.05), transparent 30%), #f8fafc',
+      color: '#0f172a',
+    },
+    shell: {
+      maxWidth: '1240px',
+      margin: '0 auto',
+      padding: '34px 24px 70px',
+    },
+    title: {
+      margin: 0,
+      fontSize: '34px',
+      letterSpacing: '-1.1px',
+      color: '#0f172a',
+    },
+    subtitle: {
+      margin: '8px 0 0',
+      color: '#64748b',
+      fontSize: '14px',
+      lineHeight: 1.6,
+      maxWidth: '760px',
+    },
+    filterBar: {
+      marginTop: '24px',
+      padding: '12px',
+      borderRadius: '16px',
+      border: '1px solid #dbe3ef',
+      background: '#ffffff',
+      boxShadow: '0 10px 34px rgba(15,23,42,.04)',
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '10px',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    filterGroup: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '10px',
+      alignItems: 'center',
+    },
+    calendar: {
+      minHeight: '40px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '0 13px',
+      borderRadius: '10px',
+      border: '1px solid #dbe3ef',
+      background: '#ffffff',
+      color: '#334155',
+      fontSize: '10px',
+      fontWeight: 750,
+    },
+    select: {
+      minHeight: '40px',
+      padding: '0 12px',
+      borderRadius: '10px',
+      border: '1px solid #dbe3ef',
+      background: '#ffffff',
+      color: '#0f172a',
+      fontSize: '10px',
+      fontWeight: 750,
+      outline: 'none',
+    },
+    note: {
+      color: '#64748b',
+      fontSize: '9px',
+    },
+    kpiGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))',
+      gap: '14px',
+      marginTop: '16px',
+    },
+    kpi: {
+      padding: '19px',
+      borderRadius: '16px',
+      background: '#ffffff',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 8px 24px rgba(15,23,42,.035)',
+    },
+    kpiLabel: {
+      display: 'block',
+      color: '#475569',
+      fontSize: '10px',
+      fontWeight: 750,
+    },
+    kpiValue: {
+      display: 'block',
+      marginTop: '10px',
+      color: '#0f172a',
+      fontSize: '27px',
+      fontWeight: 850,
+      letterSpacing: '-1px',
+    },
+    kpiHint: {
+      display: 'block',
+      marginTop: '7px',
+      color: '#94a3b8',
+      fontSize: '9px',
+      lineHeight: 1.45,
+    },
+    mainGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'minmax(0,1.7fr) minmax(280px,.8fr)',
+      gap: '14px',
+      marginTop: '14px',
+      alignItems: 'start',
+    },
+    content: {
+      display: 'grid',
+      gap: '14px',
+    },
+    twoColumn: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))',
+      gap: '14px',
+    },
+    panel: {
+      padding: '18px',
+      borderRadius: '16px',
+      background: '#ffffff',
+      border: '1px solid #e2e8f0',
+      boxShadow: '0 8px 26px rgba(15,23,42,.035)',
+      minWidth: 0,
+    },
+    panelTitle: {
+      margin: 0,
+      color: '#0f172a',
+      fontSize: '14px',
+      fontWeight: 800,
+    },
+    panelSubtitle: {
+      margin: '5px 0 0',
+      color: '#64748b',
+      fontSize: '9px',
+      lineHeight: 1.5,
+    },
+    chart: {
+      minHeight: '220px',
+      marginTop: '16px',
+      display: 'grid',
+      alignContent: 'center',
+      gap: '13px',
+    },
+    barRow: {
+      display: 'grid',
+      gridTemplateColumns: '110px 1fr 48px',
+      gap: '10px',
+      alignItems: 'center',
+      fontSize: '10px',
+    },
+    track: {
+      height: '9px',
+      background: '#edf2f7',
+      borderRadius: '999px',
+      overflow: 'hidden',
+    },
+    fill: {
+      height: '100%',
+      borderRadius: '999px',
+      background: 'linear-gradient(90deg,#2563eb,#60a5fa)',
+    },
+    empty: {
+      minHeight: '220px',
+      marginTop: '16px',
+      borderRadius: '12px',
+      border: '1px dashed #cbd5e1',
+      display: 'grid',
+      placeItems: 'center',
+      textAlign: 'center',
+      color: '#64748b',
+      fontSize: '10px',
+      padding: '20px',
+    },
+    right: {
+      display: 'grid',
+      gap: '14px',
+    },
+  };
+
+  const charts = data?.charts;
+  const sample = data?.sample;
+
+  const searchedMax = maxValue(
+    charts?.most_searched?.map((item) => item.count) || []
+  );
+
+  const recommendedMax = maxValue(
+    charts?.most_recommended?.map((item) => item.recommendation) || []
+  );
+
+  const chartWidth = 520;
+  const chartHeight = 240;
+  const chartPadLeft = 40;
+  const chartPadRight = 18;
+  const chartPadTop = 18;
+  const chartPadBottom = 34;
+  const innerChartWidth = chartWidth - chartPadLeft - chartPadRight;
+  const innerChartHeight = chartHeight - chartPadTop - chartPadBottom;
+
+  const linePalette = ['#2563eb', '#7c3aed', '#0891b2', '#16a34a', '#f59e0b'];
+
+  const heatColor = (value: number | null) => {
+    if (value === null) return '#f8fafc';
+    const opacity = 0.10 + (Math.max(0, Math.min(100, value)) / 100) * 0.75;
+    return `rgba(37,99,235,${opacity})`;
+  };
+
+  return (
+    <div style={ui.page}>
+      <header style={styles.publicHeader}>
+        <div style={styles.publicHeaderInner}>
+          <button
+            type="button"
+            onClick={onBackHome}
+            style={{ ...styles.publicBrand, cursor: 'pointer' }}
+          >
+            <span style={styles.brandMark}>A</span>
+            <span>
+              <strong style={styles.brandName}>ANAIA</strong>
+              <span style={styles.brandSubtitle}>Apareça na IA</span>
+            </span>
+          </button>
+
+          <nav style={styles.publicNav}>
+            <button
+              type="button"
+              style={{ ...styles.publicNavLink, color: '#1d4ed8', fontWeight: 800 }}
+            >
+              Pesquisa
+            </button>
+            <button
+              type="button"
+              style={styles.publicNavLink}
+              onClick={onBackHome}
+            >
+              Início
+            </button>
+          </nav>
+
+          <div style={styles.publicHeaderActions}>
+            <button
+              type="button"
+              style={styles.publicLoginButton}
+              onClick={onLogin}
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              style={styles.publicPrimaryButton}
+              onClick={onLogin}
+            >
+              Experimentar ANAIA
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main style={ui.shell}>
+        <span style={styles.pageEyebrow}>Pesquisa pública</span>
+        <h1 style={ui.title}>Panorama de interesse nas IAs</h1>
+        <p style={ui.subtitle}>
+          Veja quais setores apresentaram maior atividade nas respostas processadas pelas IAs no dia anterior (D-1) e entenda por que o setor líder se destacou.
+        </p>
+
+        <div style={ui.filterBar}>
+          <div style={ui.filterGroup}>
+            <div style={ui.calendar}>
+              <span>▣</span>
+              <span>
+                {data?.is_fallback && resolvedDataDateLabel
+                  ? `Última leitura · ${resolvedDataDateLabel}`
+                  : `D-1 · ${dMinusOneLabel}`}
+              </span>
+            </div>
+
+            <select
+              value={sector}
+              onChange={(event) => setSector(event.target.value)}
+              style={ui.select}
+            >
+              {PUBLIC_RESEARCH_SECTORS.map((item) => (
+                <option key={item} value={item}>
+                  Setor: {item}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span style={ui.note}>
+            {data?.is_fallback && resolvedDataDateLabel
+              ? `D-1 sem dados suficientes · exibindo ${resolvedDataDateLabel}`
+              : 'Dados referentes ao dia anterior (D-1).'}
+          </span>
+        </div>
+
+        {data?.is_fallback && (
+          <div
+            style={{
+              marginTop: '10px',
+              padding: '10px 12px',
+              borderRadius: '10px',
+              border: '1px solid #bfdbfe',
+              background: '#eff6ff',
+              color: '#1e3a8a',
+              fontSize: '10px',
+              lineHeight: 1.5,
+            }}
+          >
+            {data.fallback_reason ||
+              'D-1 ainda não possui dados suficientes. Exibindo a última leitura disponível.'}
+          </div>
+        )}
+
+        {error && (
+          <div
+            style={{
+              marginTop: '14px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              border: '1px solid #fecaca',
+              background: '#fef2f2',
+              color: '#991b1b',
+              fontSize: '10px',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={ui.kpiGrid}>
+          <div style={ui.kpi}>
+            <span style={ui.kpiLabel}>Pesquisas sobre o setor</span>
+            <strong style={ui.kpiValue}>
+              {loading
+                ? '...'
+                : `${sample?.current_diagnostics ?? 0}`}
+            </strong>
+            <span style={ui.kpiHint}>
+              Quantidade de pesquisas/análises registradas para {sector} na leitura exibida.
+            </span>
+          </div>
+
+          <div style={ui.kpi}>
+            <span style={ui.kpiLabel}>Direcionamento pelas IAs</span>
+            <strong style={ui.kpiValue}>
+              {loading ? '...' : formatPercent(data?.kpis?.direction_rate_percent)}
+            </strong>
+            <span style={ui.kpiHint}>
+              Percentual das observações válidas com recomendação igual ou superior a 50.
+            </span>
+          </div>
+
+          <div style={ui.kpi}>
+            <span style={ui.kpiLabel}>IA que mais recomendou</span>
+            <strong style={ui.kpiValue}>
+              {loading ? '...' : data?.kpis?.top_ai?.name || '—'}
+            </strong>
+            <span style={ui.kpiHint}>
+              {data?.kpis?.top_ai
+                ? `${formatPercent(data.kpis.top_ai.rate)} das observações válidas.`
+                : 'Sem amostra válida suficiente.'}
+            </span>
+          </div>
+
+          <div style={ui.kpi}>
+            <span style={ui.kpiLabel}>Destaque do setor</span>
+            <strong style={ui.kpiValue}>
+              {loading ? '...' : data?.kpis?.sector_spotlight?.name || '—'}
+            </strong>
+            <span style={ui.kpiHint}>
+              {data?.kpis?.sector_spotlight
+                ? `Recomendação média ${formatPercent(data.kpis.sector_spotlight.recommendation)}.`
+                : 'Sem dados válidos no período.'}
+            </span>
+          </div>
+        </div>
+
+        <div style={ui.mainGrid}>
+          <div style={ui.content}>
+            <div style={ui.twoColumn}>
+              <div style={ui.panel}>
+                <h2 style={ui.panelTitle}>Setores com maior interesse em D-1</h2>
+                <p style={ui.panelSubtitle}>
+                  Ranking por volume de atividade observada nas respostas processadas no dia anterior.
+                </p>
+
+                {data?.sector_trends_today?.ranking?.length ? (
+                  <div
+                    style={{
+                      minHeight: '250px',
+                      marginTop: '14px',
+                      display: 'grid',
+                      alignContent: 'center',
+                      gap: '11px',
+                      paddingTop: '14px',
+                      borderTop: '1px solid #eef2f7',
+                    }}
+                  >
+                    {data.sector_trends_today.ranking
+                      .slice(0, 5)
+                      .map((item) => {
+                        const maxCount = Math.max(
+                          1,
+                          ...data.sector_trends_today!.ranking
+                            .slice(0, 5)
+                            .map((row) => row.observation_count)
+                        );
+
+                        return (
+                          <div
+                            key={item.sector}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '34px 120px 1fr 58px',
+                              gap: '10px',
+                              alignItems: 'center',
+                              fontSize: '10px',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: '28px',
+                                height: '28px',
+                                borderRadius: '9px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background:
+                                  item.rank === 1
+                                    ? '#dbeafe'
+                                    : '#f1f5f9',
+                                color:
+                                  item.rank === 1
+                                    ? '#1d4ed8'
+                                    : '#475569',
+                                fontWeight: 850,
+                              }}
+                            >
+                              #{item.rank}
+                            </div>
+
+                            <strong
+                              style={{
+                                color: '#0f172a',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {item.sector}
+                            </strong>
+
+                            <div style={ui.track}>
+                              <div
+                                style={{
+                                  ...ui.fill,
+                                  width: `${Math.max(
+                                    6,
+                                    (item.observation_count / maxCount) * 100
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+
+                            <div
+                              style={{
+                                textAlign: 'right',
+                                display: 'grid',
+                                gap: '2px',
+                              }}
+                            >
+                              <strong>{item.observation_count}</strong>
+                              <span
+                                style={{
+                                  color: '#94a3b8',
+                                  fontSize: '8px',
+                                }}
+                              >
+                                {item.share_of_observed_ai_activity === null
+                                  ? '—'
+                                  : `${Math.round(
+                                      item.share_of_observed_ai_activity
+                                    )}%`}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div style={ui.empty}>
+                    Não há observações suficientes em D-1 para comparar setores.
+                  </div>
+                )}
+              </div>
+              <div style={ui.panel}>
+                <h2 style={ui.panelTitle}>Interesse por setor ao longo do dia</h2>
+                <p style={ui.panelSubtitle}>
+                  Distribuição horária dos 5 setores com maior atividade em D-1.
+                </p>
+
+                {data?.sector_trends_today?.ranking?.length ? (
+                  <div style={{ overflowX: 'auto', marginTop: '12px' }}>
+                    {(() => {
+                      const topSectors =
+                        data.sector_trends_today!.ranking.slice(0, 5);
+
+                      const maxCount = Math.max(
+                        1,
+                        ...topSectors.flatMap((sectorRow) =>
+                          sectorRow.by_hour.map((point) => point.count)
+                        )
+                      );
+
+                      return (
+                        <>
+                          <svg
+                            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                            width="100%"
+                            height="250"
+                            style={{
+                              display: 'block',
+                              minWidth: '470px',
+                            }}
+                          >
+                            {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                              const tickValue = Math.round(maxCount * ratio);
+                              const y =
+                                chartPadTop +
+                                (1 - ratio) * innerChartHeight;
+
+                              return (
+                                <g key={ratio}>
+                                  <line
+                                    x1={chartPadLeft}
+                                    x2={chartWidth - chartPadRight}
+                                    y1={y}
+                                    y2={y}
+                                    stroke="#e2e8f0"
+                                  />
+                                  <text
+                                    x={8}
+                                    y={y + 4}
+                                    fontSize="9"
+                                    fill="#94a3b8"
+                                  >
+                                    {tickValue}
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {[0, 4, 8, 12, 16, 20, 23].map((hour) => {
+                              const x =
+                                chartPadLeft +
+                                (hour / 23) * innerChartWidth;
+
+                              return (
+                                <g key={hour}>
+                                  <text
+                                    x={x}
+                                    y={chartHeight - 10}
+                                    textAnchor="middle"
+                                    fontSize="9"
+                                    fill="#64748b"
+                                  >
+                                    {String(hour).padStart(2, '0')}h
+                                  </text>
+                                </g>
+                              );
+                            })}
+
+                            {topSectors.map((sectorRow, seriesIndex) => {
+                              const points = sectorRow.by_hour.map(
+                                (point, index) => ({
+                                  x:
+                                    chartPadLeft +
+                                    (index / 23) * innerChartWidth,
+                                  y:
+                                    chartPadTop +
+                                    (1 - point.count / maxCount) *
+                                      innerChartHeight,
+                                  count: point.count,
+                                })
+                              );
+
+                              const color =
+                                linePalette[
+                                  seriesIndex % linePalette.length
+                                ];
+
+                              return (
+                                <g key={sectorRow.sector}>
+                                  <polyline
+                                    points={points
+                                      .map(
+                                        (point) =>
+                                          `${point.x},${point.y}`
+                                      )
+                                      .join(' ')}
+                                    fill="none"
+                                    stroke={color}
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+
+                                  {points
+                                    .filter((point) => point.count > 0)
+                                    .map((point, index) => (
+                                      <circle
+                                        key={index}
+                                        cx={point.x}
+                                        cy={point.y}
+                                        r="3.5"
+                                        fill="#ffffff"
+                                        stroke={color}
+                                        strokeWidth="2"
+                                      />
+                                    ))}
+                                </g>
+                              );
+                            })}
+                          </svg>
+
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '10px 14px',
+                              marginTop: '-4px',
+                            }}
+                          >
+                            {topSectors.map((item, index) => (
+                              <span
+                                key={item.sector}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  color: '#475569',
+                                  fontSize: '9px',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '50%',
+                                    background:
+                                      linePalette[
+                                        index % linePalette.length
+                                      ],
+                                  }}
+                                />
+                                {item.sector}
+                              </span>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div style={ui.empty}>
+                    Ainda não existem observações suficientes hoje para mostrar a evolução por setor.
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+            <div style={ui.panel}>
+              <h2 style={ui.panelTitle}>Mais citadas pelas IAs na data</h2>
+              <p style={ui.panelSubtitle}>
+                Top 5 entidades mais mencionadas nas respostas reais das IAs para o setor {sector}.
+                Citação não é tratada como recomendação.
+              </p>
+
+              {charts?.most_cited_by_ai?.length ? (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    display: 'grid',
+                    gap: '11px',
+                    paddingTop: '14px',
+                    borderTop: '1px solid #eef2f7',
+                  }}
+                >
+                  {charts.most_cited_by_ai.map((item) => {
+                    const maxCitations = Math.max(
+                      1,
+                      ...charts.most_cited_by_ai.map(
+                        (row) => row.citation_count
+                      )
+                    );
+
+                    return (
+                      <div
+                        key={item.name}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '34px 130px 1fr 64px',
+                          gap: '10px',
+                          alignItems: 'center',
+                          fontSize: '10px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '9px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background:
+                              item.rank === 1
+                                ? '#dbeafe'
+                                : '#f1f5f9',
+                            color:
+                              item.rank === 1
+                                ? '#1d4ed8'
+                                : '#475569',
+                            fontWeight: 850,
+                          }}
+                        >
+                          #{item.rank}
+                        </div>
+
+                        <strong
+                          title={item.name}
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            color: '#0f172a',
+                          }}
+                        >
+                          {item.name}
+                        </strong>
+
+                        <div style={ui.track}>
+                          <div
+                            style={{
+                              ...ui.fill,
+                              width: `${Math.max(
+                                6,
+                                (item.citation_count /
+                                  maxCitations) *
+                                  100
+                              )}%`,
+                            }}
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            textAlign: 'right',
+                            display: 'grid',
+                            gap: '2px',
+                          }}
+                        >
+                          <strong>
+                            {item.citation_count}
+                          </strong>
+                          <span
+                            style={{
+                              color: '#94a3b8',
+                              fontSize: '8px',
+                            }}
+                          >
+                            {item.citation_rate === null
+                              ? '—'
+                              : `${Math.round(
+                                  item.citation_rate
+                                )}%`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={ui.empty}>
+                  Ainda não existem respostas textuais suficientes para calcular as entidades mais citadas.
+                </div>
+              )}
+            </div>
+
+            <div style={ui.twoColumn}>
+              <div style={ui.panel}>
+                <h2 style={ui.panelTitle}>Setores por modelo de IA</h2>
+                <p style={ui.panelSubtitle}>
+                  Comparação entre os setores com maior atividade observada em cada modelo de IA.
+                </p>
+
+                {charts?.comparison_by_model?.length ? (
+                  <div style={{ overflowX: 'auto', marginTop: '14px' }}>
+                    <table
+                      style={{
+                        width: '100%',
+                        minWidth: '470px',
+                        borderCollapse: 'separate',
+                        borderSpacing: '4px',
+                        fontSize: '9px',
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          <th
+                            style={{
+                              textAlign: 'left',
+                              color: '#64748b',
+                              padding: '8px',
+                            }}
+                          >
+                            Empresa
+                          </th>
+                          <th style={{ color: '#64748b', padding: '8px' }}>ChatGPT</th>
+                          <th style={{ color: '#64748b', padding: '8px' }}>Gemini</th>
+                          <th style={{ color: '#64748b', padding: '8px' }}>Claude</th>
+                          <th style={{ color: '#64748b', padding: '8px' }}>Benchmark</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {charts.comparison_by_model.map((row) => (
+                          <tr key={row.name}>
+                            <td
+                              style={{
+                                padding: '8px',
+                                color: '#0f172a',
+                                fontWeight: 750,
+                              }}
+                            >
+                              {row.name}
+                            </td>
+
+                            {[
+                              row.openai,
+                              row.gemini,
+                              row.anthropic,
+                              row.benchmark_score,
+                            ].map((value, index) => (
+                              <td
+                                key={index}
+                                style={{
+                                  padding: '10px',
+                                  textAlign: 'center',
+                                  borderRadius: '7px',
+                                  background: heatColor(value),
+                                  color:
+                                    value !== null && value >= 55
+                                      ? '#ffffff'
+                                      : '#334155',
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {value === null ? '—' : `${Math.round(value)}%`}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={ui.empty}>
+                    Nenhum dado por modelo está disponível para este setor.
+                  </div>
+                )}
+              </div>
+
+              <div style={ui.panel}>
+                <h2 style={ui.panelTitle}>Variação do interesse por setor</h2>
+                <p style={ui.panelSubtitle}>
+                  Variação das taxas observadas entre os principais setores ao longo das respostas processadas.
+                </p>
+
+                {charts?.dispersion?.some((item) => item.samples > 0) ? (
+                  <div
+                    style={{
+                      minHeight: '220px',
+                      marginTop: '18px',
+                      display: 'grid',
+                      gap: '14px',
+                      alignContent: 'center',
+                    }}
+                  >
+                    {charts.dispersion
+                      .filter((item) => item.samples > 0)
+                      .map((item) => {
+                        const min = Number(item.min ?? 0);
+                        const max = Number(item.max ?? 0);
+                        const mean = Number(item.mean ?? 0);
+
+                        return (
+                          <div
+                            key={item.name}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '105px 1fr 48px',
+                              gap: '10px',
+                              alignItems: 'center',
+                              fontSize: '9px',
+                            }}
+                          >
+                            <strong
+                              style={{
+                                color: '#0f172a',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              }}
+                            >
+                              {item.name}
+                            </strong>
+
+                            <div
+                              style={{
+                                position: 'relative',
+                                height: '18px',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: 0,
+                                  right: 0,
+                                  top: '8px',
+                                  height: '2px',
+                                  background: '#e2e8f0',
+                                }}
+                              />
+
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  left: `${Math.max(0, Math.min(100, min))}%`,
+                                  width: `${Math.max(
+                                    2,
+                                    Math.min(100, max) -
+                                      Math.max(0, min)
+                                  )}%`,
+                                  top: '6px',
+                                  height: '6px',
+                                  borderRadius: '999px',
+                                  background: '#bfdbfe',
+                                }}
+                              />
+
+                              <div
+                                title={`Média ${Math.round(mean)}%`}
+                                style={{
+                                  position: 'absolute',
+                                  left: `calc(${Math.max(
+                                    0,
+                                    Math.min(100, mean)
+                                  )}% - 5px)`,
+                                  top: '4px',
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  background: '#2563eb',
+                                  boxShadow: '0 0 0 3px #dbeafe',
+                                }}
+                              />
+                            </div>
+
+                            <strong style={{ textAlign: 'right' }}>
+                              {Math.round(mean)}%
+                            </strong>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div style={ui.empty}>
+                    Ainda não há observações suficientes para calcular dispersão.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <aside style={ui.right}>
+            <div style={ui.panel}>
+              <h2 style={ui.panelTitle}>Por que foi destaque?</h2>
+              <p style={ui.panelSubtitle}>
+                Explicação baseada somente nos sinais medidos em D-1.
+              </p>
+
+              {data?.sector_trends_today?.highlight ? (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    background:
+                      'linear-gradient(135deg,#eff6ff,#f8fbff)',
+                    border: '1px solid #dbeafe',
+                  }}
+                >
+                  <strong
+                    style={{
+                      display: 'block',
+                      color: '#1d4ed8',
+                      fontSize: '16px',
+                    }}
+                  >
+                    {data.sector_trends_today.highlight.sector}
+                  </strong>
+
+                  <p
+                    style={{
+                      margin: '8px 0 0',
+                      color: '#475569',
+                      fontSize: '10px',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {data.sector_trends_today.highlight.explanation}
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2,1fr)',
+                      gap: '8px',
+                      marginTop: '12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: '9px',
+                        borderRadius: '9px',
+                        background: '#ffffff',
+                        border: '1px solid #dbeafe',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          color: '#94a3b8',
+                          fontSize: '8px',
+                        }}
+                      >
+                        Direcionamento
+                      </span>
+                      <strong
+                        style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          fontSize: '13px',
+                        }}
+                      >
+                        {formatPercent(
+                          data.sector_trends_today.highlight
+                            .direction_rate
+                        )}
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        padding: '9px',
+                        borderRadius: '9px',
+                        background: '#ffffff',
+                        border: '1px solid #dbeafe',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          color: '#94a3b8',
+                          fontSize: '8px',
+                        }}
+                      >
+                        Recomendação média
+                      </span>
+                      <strong
+                        style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          fontSize: '13px',
+                        }}
+                      >
+                        {formatPercent(
+                          data.sector_trends_today.highlight
+                            .average_recommendation
+                        )}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={ui.empty}>
+                  Não há dados suficientes em D-1 para explicar o destaque.
+                </div>
+              )}
+            </div>
+
+            <div style={ui.panel}>
+              <h2 style={ui.panelTitle}>Metodologia e embasamento</h2>
+              <p style={ui.panelSubtitle}>
+                Os números representam atividade observada nas respostas processadas pelas IAs. Não representam o volume global de buscas internas do ChatGPT, Gemini ou Claude.
+              </p>
+
+              {[
+                `Setor selecionado: ${sector}`,
+                `Diagnósticos na data: ${sample?.current_diagnostics ?? 0}`,
+                `Observações válidas: ${sample?.valid_observations ?? 0}`,
+                `Respostas textuais analisadas: ${sample?.textual_responses ?? 0}`,
+                'Direcionamento: recommendation ≥ 50',
+                'Nenhum volume é apresentado como tráfego global das IAs.',
+              ].map((item, index) => (
+                <div
+                  key={item}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '26px 1fr',
+                    gap: '9px',
+                    padding: '10px 0',
+                    borderBottom: '1px solid #eef2f7',
+                    fontSize: '9px',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#eff6ff',
+                      color: '#2563eb',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {index + 1}
+                  </span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={ui.panel}>
+              <h2 style={ui.panelTitle}>Leitura do período</h2>
+              <p style={ui.panelSubtitle}>
+                Síntese automática baseada nos dados disponíveis.
+              </p>
+
+              <div style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
+                <div style={ui.panelSubtitle}>
+                  <strong style={{ color: '#0f172a' }}>1. Interesse:</strong>{' '}
+                  {charts?.most_searched?.[0]?.name || 'Sem dados suficientes'}.
+                </div>
+                <div style={ui.panelSubtitle}>
+                  <strong style={{ color: '#0f172a' }}>2. Recomendação:</strong>{' '}
+                  {data?.kpis?.sector_spotlight?.name || 'Sem dados suficientes'}.
+                </div>
+                <div style={ui.panelSubtitle}>
+                  <strong style={{ color: '#0f172a' }}>3. IA:</strong>{' '}
+                  {data?.kpis?.top_ai?.name || 'Sem dados suficientes'}.
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </main>
     </div>
   );
 };
@@ -3831,6 +5249,14 @@ export default function ANAIAApp() {
       {page === 'landing' && (
         <PublicLandingPage
           onLogin={() => setPage('login')}
+          onPublicResearch={() => setPage('public-research')}
+        />
+      )}
+
+      {page === 'public-research' && (
+        <PublicResearchPage
+          onBackHome={() => setPage('landing')}
+          onLogin={() => setPage('login')}
         />
       )}
 
@@ -3839,6 +5265,7 @@ export default function ANAIAApp() {
 
       {user &&
         page !== 'landing' &&
+        page !== 'public-research' &&
         page !== 'login' &&
         page !== 'signup' && (
         <>
