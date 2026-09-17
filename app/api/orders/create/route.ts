@@ -131,7 +131,6 @@ export async function POST(request: Request) {
     const mercadoPagoPayload: Record<string, any> = {
       type: 'online',
       processing_mode: 'manual',
-      capture_mode: 'automatic_async',
       total_amount: PRICE.toFixed(2),
       external_reference: internalOrderId,
       description: 'Diagnóstico assistido de visibilidade em IA — ANAIA',
@@ -187,8 +186,21 @@ export async function POST(request: Request) {
     }
 
     if (!mpResponse.ok || !mpData?.id || !mpData?.checkout_url) {
+      const mpErrorCode =
+        mpData?.code ||
+        mpData?.error ||
+        mpData?.message ||
+        `HTTP_${mpResponse.status}`;
+
+      const mpErrorMessage =
+        mpData?.message ||
+        mpData?.error ||
+        'Falha ao criar checkout no Mercado Pago.';
+
       console.error('Mercado Pago order error:', {
         status: mpResponse.status,
+        code: mpErrorCode,
+        message: mpErrorMessage,
         body: mpData || mpRaw,
       });
 
@@ -196,7 +208,9 @@ export async function POST(request: Request) {
         .from('orders')
         .update({
           payment_status: 'failed',
-          notes: `Falha ao criar checkout Mercado Pago. HTTP ${mpResponse.status}`,
+          notes: `Falha Mercado Pago: ${String(mpErrorCode).slice(0, 120)} | ${String(
+            mpErrorMessage
+          ).slice(0, 280)}`,
           updated_at: new Date().toISOString(),
         })
         .eq('id', internalOrderId);
@@ -205,7 +219,8 @@ export async function POST(request: Request) {
         {
           success: false,
           error:
-            'O pedido foi registrado, mas o checkout não pôde ser criado. Tente novamente em alguns instantes.',
+            'O pedido foi registrado, mas o Mercado Pago recusou a criação do checkout.',
+          provider_code: String(mpErrorCode),
         },
         { status: 502 }
       );
