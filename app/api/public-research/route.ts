@@ -1262,6 +1262,30 @@ export async function GET(request: NextRequest) {
     const topAI = recommendationByAI[0] || null;
     const spotlight = mostRecommended[0] || null;
 
+    const selectedSectorTrend =
+      sectorTrendsSelectedDay.find((item) => item.sector === sector) || null;
+
+    const providerPresenceMap = new Map<string, number>();
+
+    for (const observation of observations) {
+      providerPresenceMap.set(
+        observation.provider,
+        (providerPresenceMap.get(observation.provider) || 0) + 1
+      );
+    }
+
+    const providerPresence = Array.from(providerPresenceMap.entries())
+      .map(([provider, count]) => ({
+        provider,
+        label: providerLabel(provider),
+        count,
+        share: pct(count, observations.length),
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    const topPresenceAI = providerPresence[0] || null;
+    const topCitedCompany = mostCitedByAI[0] || null;
+
     return NextResponse.json({
       success: true,
       sector,
@@ -1282,8 +1306,8 @@ export async function GET(request: NextRequest) {
       sector_trends_today: {
         disclaimer:
           isFallback
-            ? 'D-1 não possui dados suficientes para o setor selecionado; exibindo a última leitura disponível. Não é volume global de buscas internas das IAs.'
-            : 'Representa atividade observada nas respostas processadas pela ANAIA em D-1 (dia anterior); não é volume global de buscas internas do ChatGPT, Gemini ou Claude.',
+            ? 'D-1 não possui dados suficientes para o setor selecionado; exibindo a última leitura disponível. Os números representam presença observada pela ANAIA, não volume global de buscas das IAs.'
+            : 'Representa presença observada nos resultados processados pela ANAIA em D-1; não é volume global de buscas internas do ChatGPT, Gemini ou Claude.',
         total_observations: totalSectorObservations,
         ranking: sectorTrendsSelectedDay,
         highlight:
@@ -1330,6 +1354,26 @@ export async function GET(request: NextRequest) {
         sector_spotlight: spotlight
           ? { name: spotlight.name, recommendation: spotlight.recommendation }
           : null,
+        sector_presence: {
+          appearance_count: selectedSectorTrend?.observation_count ?? 0,
+          share_percent:
+            selectedSectorTrend?.share_of_observed_ai_activity ?? null,
+          total_observations: totalSectorObservations,
+          top_ai: topPresenceAI
+            ? {
+                name: topPresenceAI.label,
+                count: topPresenceAI.count,
+                share: topPresenceAI.share,
+              }
+            : null,
+          top_company: topCitedCompany
+            ? {
+                name: topCitedCompany.name,
+                count: topCitedCompany.citation_count,
+                rate: topCitedCompany.citation_rate,
+              }
+            : null,
+        },
       },
       charts: {
         most_searched: mostSearched,

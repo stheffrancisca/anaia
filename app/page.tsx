@@ -305,6 +305,85 @@ const PublicLandingPage: React.FC<{
       });
   };
 
+  const [leadForm, setLeadForm] = React.useState({
+    name: '',
+    company: '',
+    website: '',
+    email: '',
+    segment: '',
+    main_competitor: '',
+  });
+  const [leadStatus, setLeadStatus] = React.useState<
+    'idle' | 'sending' | 'success' | 'error'
+  >('idle');
+  const [leadMessage, setLeadMessage] = React.useState('');
+
+  const scrollToLeadForm = () => {
+    document
+      .getElementById('analise-gratuita')
+      ?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+  };
+
+  const handleLeadChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = event.target;
+    setLeadForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  };
+
+  const handleLeadSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    setLeadStatus('sending');
+    setLeadMessage('');
+
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(leadForm),
+      });
+
+      const { data, rawText } = await readApiPayload(response);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.error ||
+            rawText ||
+            `Não foi possível enviar a solicitação. HTTP ${response.status}`
+        );
+      }
+
+      setLeadStatus('success');
+      setLeadMessage(
+        'Solicitação recebida. Vamos analisar sua empresa e preparar os principais sinais de presença nas IAs.'
+      );
+      setLeadForm({
+        name: '',
+        company: '',
+        website: '',
+        email: '',
+        segment: '',
+        main_competitor: '',
+      });
+    } catch (error) {
+      setLeadStatus('error');
+      setLeadMessage(
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível enviar sua solicitação.'
+      );
+    }
+  };
+
   const benefitCards = [
     {
       icon: '◎',
@@ -404,9 +483,9 @@ const PublicLandingPage: React.FC<{
             <button
               type="button"
               style={styles.publicPrimaryButton}
-              onClick={onLogin}
+              onClick={scrollToLeadForm}
             >
-              Experimentar ANAIA
+              Análise gratuita
             </button>
           </div>
         </div>
@@ -437,9 +516,9 @@ const PublicLandingPage: React.FC<{
                 <button
                   type="button"
                   style={styles.publicHeroPrimary}
-                  onClick={onLogin}
+                  onClick={scrollToLeadForm}
                 >
-                  Analisar minha marca →
+                  Solicitar análise gratuita →
                 </button>
 
                 <button
@@ -689,6 +768,291 @@ const PublicLandingPage: React.FC<{
           </div>
         </section>
 
+
+        <section
+          id="analise-gratuita"
+          style={{
+            maxWidth: '1180px',
+            margin: '0 auto',
+            padding: '78px 24px',
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, .95fr) minmax(420px, 1.05fr)',
+              gap: '34px',
+              alignItems: 'start',
+              padding: '34px',
+              borderRadius: '24px',
+              background:
+                'linear-gradient(135deg,#f8fbff 0%,#ffffff 55%,#eff6ff 100%)',
+              border: '1px solid #dbeafe',
+              boxShadow: '0 20px 60px rgba(15,23,42,.07)',
+            }}
+          >
+            <div>
+              <span style={styles.publicSectionEyebrow}>
+                ANÁLISE GRATUITA
+              </span>
+
+              <h2
+                style={{
+                  ...styles.publicSectionTitle,
+                  marginTop: '10px',
+                  fontSize: '32px',
+                  lineHeight: 1.12,
+                }}
+              >
+                Descubra como sua empresa aparece nas respostas das IAs.
+              </h2>
+
+              <p
+                style={{
+                  ...styles.publicSectionText,
+                  marginTop: '14px',
+                  maxWidth: '520px',
+                }}
+              >
+                Envie os dados da sua empresa. A ANAIA prepara uma leitura inicial
+                de presença, citações, concorrência e oportunidades nas respostas
+                analisadas de IA.
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gap: '12px',
+                  marginTop: '24px',
+                }}
+              >
+                {[
+                  'Presença da marca nas respostas analisadas',
+                  'Empresas e concorrentes mais citados',
+                  'Modelos de IA com maior presença',
+                  'Principais gaps e oportunidades',
+                ].map((item) => (
+                  <div
+                    key={item}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      color: '#334155',
+                      fontSize: '13px',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '8px',
+                        background: '#dbeafe',
+                        color: '#1d4ed8',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        flex: '0 0 auto',
+                      }}
+                    >
+                      ✓
+                    </span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  marginTop: '26px',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  color: '#64748b',
+                  fontSize: '11px',
+                  lineHeight: 1.55,
+                }}
+              >
+                A ANAIA mede presença dentro da amostra de respostas processadas
+                pela plataforma. Não representa volume global de buscas internas
+                do ChatGPT, Gemini ou Claude.
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleLeadSubmit}
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '18px',
+                padding: '24px',
+                boxShadow: '0 12px 34px rgba(15,23,42,.05)',
+              }}
+            >
+              <h3
+                style={{
+                  margin: 0,
+                  fontSize: '21px',
+                  color: '#0f172a',
+                }}
+              >
+                Solicitar análise gratuita
+              </h3>
+
+              <p
+                style={{
+                  margin: '7px 0 20px',
+                  color: '#64748b',
+                  fontSize: '12px',
+                  lineHeight: 1.5,
+                }}
+              >
+                Preencha os dados abaixo para entrar na fila de análise.
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+                  gap: '14px',
+                }}
+              >
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    Seu nome *
+                  </span>
+                  <input
+                    name="name"
+                    value={leadForm.name}
+                    onChange={handleLeadChange}
+                    required
+                    placeholder="Seu nome"
+                    style={styles.input}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    Empresa *
+                  </span>
+                  <input
+                    name="company"
+                    value={leadForm.company}
+                    onChange={handleLeadChange}
+                    required
+                    placeholder="Nome da empresa"
+                    style={styles.input}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    E-mail profissional *
+                  </span>
+                  <input
+                    type="email"
+                    name="email"
+                    value={leadForm.email}
+                    onChange={handleLeadChange}
+                    required
+                    placeholder="voce@empresa.com"
+                    style={styles.input}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    Site
+                  </span>
+                  <input
+                    name="website"
+                    value={leadForm.website}
+                    onChange={handleLeadChange}
+                    placeholder="https://empresa.com.br"
+                    style={styles.input}
+                  />
+                </label>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    Segmento *
+                  </span>
+                  <select
+                    name="segment"
+                    value={leadForm.segment}
+                    onChange={handleLeadChange}
+                    required
+                    style={styles.input}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="Agência / Marketing">Agência / Marketing</option>
+                    <option value="SaaS / Tecnologia">SaaS / Tecnologia</option>
+                    <option value="Fintech / Banco">Fintech / Banco</option>
+                    <option value="E-commerce / Varejo">E-commerce / Varejo</option>
+                    <option value="Educação">Educação</option>
+                    <option value="Saúde">Saúde</option>
+                    <option value="Serviços B2B">Serviços B2B</option>
+                    <option value="Outro">Outro</option>
+                  </select>
+                </label>
+
+                <label style={{ display: 'grid', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                    Concorrente principal
+                  </span>
+                  <input
+                    name="main_competitor"
+                    value={leadForm.main_competitor}
+                    onChange={handleLeadChange}
+                    placeholder="Ex.: concorrente.com"
+                    style={styles.input}
+                  />
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={leadStatus === 'sending'}
+                style={{
+                  ...styles.publicHeroPrimary,
+                  width: '100%',
+                  marginTop: '18px',
+                  opacity: leadStatus === 'sending' ? 0.65 : 1,
+                }}
+              >
+                {leadStatus === 'sending'
+                  ? 'Enviando...'
+                  : 'Quero minha análise gratuita →'}
+              </button>
+
+              {leadMessage && (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background:
+                      leadStatus === 'success' ? '#f0fdf4' : '#fef2f2',
+                    border:
+                      leadStatus === 'success'
+                        ? '1px solid #bbf7d0'
+                        : '1px solid #fecaca',
+                    color:
+                      leadStatus === 'success' ? '#166534' : '#991b1b',
+                    fontSize: '11px',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {leadMessage}
+                </div>
+              )}
+            </form>
+          </div>
+        </section>
+
         <section style={styles.publicContentSection}>
           <div style={styles.publicSectionHeading}>
             <span style={styles.publicSectionEyebrow}>
@@ -794,9 +1158,9 @@ const PublicLandingPage: React.FC<{
             <button
               type="button"
               style={styles.publicHeroPrimary}
-              onClick={onLogin}
+              onClick={scrollToLeadForm}
             >
-              Experimentar ANAIA →
+              Solicitar análise gratuita →
             </button>
           </div>
         </section>
@@ -898,6 +1262,21 @@ type PublicResearchData = {
     direction_rate_percent: number | null;
     top_ai: { name: string; rate: number | null } | null;
     sector_spotlight: { name: string; recommendation: number | null } | null;
+    sector_presence?: {
+      appearance_count: number;
+      share_percent: number | null;
+      total_observations: number;
+      top_ai: {
+        name: string;
+        count: number;
+        share: number | null;
+      } | null;
+      top_company: {
+        name: string;
+        count: number;
+        rate: number | null;
+      } | null;
+    };
   };
   charts?: {
     most_searched: Array<{
@@ -963,7 +1342,8 @@ type PublicResearchData = {
 const PublicResearchPage: React.FC<{
   onBackHome: () => void;
   onLogin: () => void;
-}> = ({ onBackHome, onLogin }) => {
+  hideHeader?: boolean;
+}> = ({ onBackHome, onLogin, hideHeader = false }) => {
   const [sector, setSector] = React.useState('Fintechs');
 
   const todayText = new Intl.DateTimeFormat(
@@ -1281,60 +1661,62 @@ const PublicResearchPage: React.FC<{
 
   return (
     <div style={ui.page}>
-      <header style={styles.publicHeader}>
-        <div style={styles.publicHeaderInner}>
-          <button
-            type="button"
-            onClick={onBackHome}
-            style={{ ...styles.publicBrand, cursor: 'pointer' }}
-          >
-            <span style={styles.brandMark}>A</span>
-            <span>
-              <strong style={styles.brandName}>ANAIA</strong>
-              <span style={styles.brandSubtitle}>Apareça na IA</span>
-            </span>
-          </button>
-
-          <nav style={styles.publicNav}>
+      {!hideHeader && (
+        <header style={styles.publicHeader}>
+          <div style={styles.publicHeaderInner}>
             <button
               type="button"
-              style={{ ...styles.publicNavLink, color: '#1d4ed8', fontWeight: 800 }}
-            >
-              Pesquisa
-            </button>
-            <button
-              type="button"
-              style={styles.publicNavLink}
               onClick={onBackHome}
+              style={{ ...styles.publicBrand, cursor: 'pointer' }}
             >
-              Início
+              <span style={styles.brandMark}>A</span>
+              <span>
+                <strong style={styles.brandName}>ANAIA</strong>
+                <span style={styles.brandSubtitle}>Apareça na IA</span>
+              </span>
             </button>
-          </nav>
 
-          <div style={styles.publicHeaderActions}>
-            <button
-              type="button"
-              style={styles.publicLoginButton}
-              onClick={onLogin}
-            >
-              Entrar
-            </button>
-            <button
-              type="button"
-              style={styles.publicPrimaryButton}
-              onClick={onLogin}
-            >
-              Experimentar ANAIA
-            </button>
+            <nav style={styles.publicNav}>
+              <button
+                type="button"
+                style={{ ...styles.publicNavLink, color: '#1d4ed8', fontWeight: 800 }}
+              >
+                Pesquisa
+              </button>
+              <button
+                type="button"
+                style={styles.publicNavLink}
+                onClick={onBackHome}
+              >
+                Início
+              </button>
+            </nav>
+
+            <div style={styles.publicHeaderActions}>
+              <button
+                type="button"
+                style={styles.publicLoginButton}
+                onClick={onLogin}
+              >
+                Entrar
+              </button>
+              <button
+                type="button"
+                style={styles.publicPrimaryButton}
+                onClick={onLogin}
+              >
+                Experimentar ANAIA
+              </button>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main style={ui.shell}>
         <span style={styles.pageEyebrow}>Pesquisa pública</span>
-        <h1 style={ui.title}>Panorama de interesse nas IAs</h1>
+        <h1 style={ui.title}>Panorama de presença nas IAs</h1>
         <p style={ui.subtitle}>
-          Veja quais setores apresentaram maior atividade nas respostas processadas pelas IAs no dia anterior (D-1) e entenda por que o setor líder se destacou.
+          Veja quais setores mais apareceram nas respostas de IA analisadas pela ANAIA no dia anterior (D-1), com base na amostra efetivamente processada.
         </p>
 
         <div style={ui.filterBar}>
@@ -1404,48 +1786,52 @@ const PublicResearchPage: React.FC<{
 
         <div style={ui.kpiGrid}>
           <div style={ui.kpi}>
-            <span style={ui.kpiLabel}>Pesquisas sobre o setor</span>
+            <span style={ui.kpiLabel}>Aparições do setor</span>
             <strong style={ui.kpiValue}>
               {loading
                 ? '...'
-                : `${sample?.current_diagnostics ?? 0}`}
+                : `${data?.kpis?.sector_presence?.appearance_count ?? 0}`}
             </strong>
             <span style={ui.kpiHint}>
-              Quantidade de pesquisas/análises registradas para {sector} na leitura exibida.
+              Respostas analisadas em que {sector} esteve presente na amostra.
             </span>
           </div>
 
           <div style={ui.kpi}>
-            <span style={ui.kpiLabel}>Direcionamento pelas IAs</span>
+            <span style={ui.kpiLabel}>Presença na amostra</span>
             <strong style={ui.kpiValue}>
-              {loading ? '...' : formatPercent(data?.kpis?.direction_rate_percent)}
+              {loading
+                ? '...'
+                : formatPercent(data?.kpis?.sector_presence?.share_percent)}
             </strong>
             <span style={ui.kpiHint}>
-              Percentual das observações válidas com recomendação igual ou superior a 50.
+              Participação de {sector} entre as observações setoriais processadas.
             </span>
           </div>
 
           <div style={ui.kpi}>
-            <span style={ui.kpiLabel}>IA que mais recomendou</span>
+            <span style={ui.kpiLabel}>IA com maior presença</span>
             <strong style={ui.kpiValue}>
-              {loading ? '...' : data?.kpis?.top_ai?.name || '—'}
+              {loading ? '...' : data?.kpis?.sector_presence?.top_ai?.name || '—'}
             </strong>
             <span style={ui.kpiHint}>
-              {data?.kpis?.top_ai
-                ? `${formatPercent(data.kpis.top_ai.rate)} das observações válidas.`
+              {data?.kpis?.sector_presence?.top_ai
+                ? `${data.kpis.sector_presence.top_ai.count} observações (${formatPercent(
+                    data.kpis.sector_presence.top_ai.share
+                  )}).`
                 : 'Sem amostra válida suficiente.'}
             </span>
           </div>
 
           <div style={ui.kpi}>
-            <span style={ui.kpiLabel}>Destaque do setor</span>
+            <span style={ui.kpiLabel}>Empresa mais citada</span>
             <strong style={ui.kpiValue}>
-              {loading ? '...' : data?.kpis?.sector_spotlight?.name || '—'}
+              {loading ? '...' : data?.kpis?.sector_presence?.top_company?.name || '—'}
             </strong>
             <span style={ui.kpiHint}>
-              {data?.kpis?.sector_spotlight
-                ? `Recomendação média ${formatPercent(data.kpis.sector_spotlight.recommendation)}.`
-                : 'Sem dados válidos no período.'}
+              {data?.kpis?.sector_presence?.top_company
+                ? `${data.kpis.sector_presence.top_company.count} citações nas respostas analisadas.`
+                : 'Sem citações suficientes na amostra.'}
             </span>
           </div>
         </div>
@@ -1454,9 +1840,9 @@ const PublicResearchPage: React.FC<{
           <div style={ui.content}>
             <div style={ui.twoColumn}>
               <div style={ui.panel}>
-                <h2 style={ui.panelTitle}>Setores com maior interesse em D-1</h2>
+                <h2 style={ui.panelTitle}>Setores com maior presença nas IAs</h2>
                 <p style={ui.panelSubtitle}>
-                  Ranking por volume de atividade observada nas respostas processadas no dia anterior.
+                  Ranking pela quantidade de observações classificadas em cada setor nas respostas processadas no dia anterior.
                 </p>
 
                 {data?.sector_trends_today?.ranking?.length ? (
@@ -1569,7 +1955,7 @@ const PublicResearchPage: React.FC<{
                 )}
               </div>
               <div style={ui.panel}>
-                <h2 style={ui.panelTitle}>Interesse por setor ao longo do dia</h2>
+                <h2 style={ui.panelTitle}>Presença por setor ao longo do dia</h2>
                 <p style={ui.panelSubtitle}>
                   Distribuição horária dos 5 setores com maior atividade em D-1.
                 </p>
@@ -1867,7 +2253,7 @@ const PublicResearchPage: React.FC<{
               <div style={ui.panel}>
                 <h2 style={ui.panelTitle}>Setores por modelo de IA</h2>
                 <p style={ui.panelSubtitle}>
-                  Comparação entre os setores com maior atividade observada em cada modelo de IA.
+                  Comparação entre os setores com maior presença observada em cada modelo de IA.
                 </p>
 
                 {charts?.comparison_by_model?.length ? (
@@ -2177,7 +2563,7 @@ const PublicResearchPage: React.FC<{
             <div style={ui.panel}>
               <h2 style={ui.panelTitle}>Metodologia e embasamento</h2>
               <p style={ui.panelSubtitle}>
-                Os números representam atividade observada nas respostas processadas pelas IAs. Não representam o volume global de buscas internas do ChatGPT, Gemini ou Claude.
+                Os números representam presença observada nas respostas processadas pelas IAs. Não representam o volume global de buscas internas do ChatGPT, Gemini ou Claude.
               </p>
 
               {[
@@ -2260,7 +2646,7 @@ const TOP_NAV_ITEMS: Array<{ key: Page; label: string }> = [
 
 const getActiveNavPage = (page: Page): Page => {
   if (page === 'processing' || page === 'result') {
-    return 'research';
+    return 'monitoring';
   }
 
   return page;
@@ -2436,24 +2822,24 @@ const HomePage: React.FC<{
       <div style={styles.homeColumns}>
         <div style={styles.featurePanel}>
           <div style={styles.featureIcon}>⌕</div>
-          <h3 style={styles.featureTitle}>Pesquisa orientada por evidências</h3>
+          <h3 style={styles.featureTitle}>Monitoramento de presença nas IAs</h3>
           <p style={styles.featureText}>
             Analise empresas, marcas, setores e concorrentes com a metodologia
             multi-IA do ANAIA.
           </p>
           <button onClick={onNewDiagnosis} style={styles.textButton}>
-            Começar pesquisa →
+            Explorar pesquisa →
           </button>
         </div>
 
         <div style={styles.featurePanel}>
           <div style={styles.featureIcon}>↗</div>
-          <h3 style={styles.featureTitle}>Monitoramento contínuo</h3>
+          <h3 style={styles.featureTitle}>Monitoramento de marca</h3>
           <p style={styles.featureText}>
             A evolução temporal será alimentada pelo histórico real dos
             diagnósticos, sem números artificiais.
           </p>
-          <span style={styles.statusPill}>Próxima fase</span>
+          <span style={styles.statusPill}>Analisar agora</span>
         </div>
 
         <div style={styles.featurePanel}>
@@ -3090,7 +3476,7 @@ const MonitoringPage: React.FC = () => {
             Inteligência temporal
           </span>
           <h1 style={styles.pageTitle}>
-            Monitoramento contínuo
+            Monitoramento de marca
           </h1>
           <p style={styles.pageSubtitle}>
             Acompanhe como sua marca aparece, evolui e é
@@ -3828,9 +4214,9 @@ const DiagnosisInputPage: React.FC<{
       <div style={styles.pageHeading}>
         <div>
           <span style={styles.pageEyebrow}>Pesquisa</span>
-          <h1 style={styles.pageTitle}>Pesquisa orientada por evidências</h1>
+          <h1 style={styles.pageTitle}>Monitoramento de presença nas IAs</h1>
           <p style={styles.pageSubtitle}>
-            Pesquise uma empresa, marca, produto ou serviço e veja como ele aparece nas principais IAs.
+            Analise uma empresa, marca, produto ou serviço e acompanhe como ela aparece nas principais IAs.
           </p>
         </div>
         <button onClick={onBack} style={{ ...styles.backButton, marginBottom: 0 }}>
@@ -3839,13 +4225,13 @@ const DiagnosisInputPage: React.FC<{
       </div>
 
       <div style={styles.inputCard}>
-        <h1 style={{ marginTop: 0 }}>Novo Diagnóstico</h1>
+        <h1 style={{ marginTop: 0 }}>Nova análise</h1>
         <p style={styles.inputSubtitle}>
-          Digite o nome de uma empresa, marca, produto ou serviço. O ANAIA fará a análise automaticamente.
+          Digite uma empresa, marca, produto ou serviço para iniciar um novo monitoramento de presença nas IAs.
         </p>
 
         <div style={styles.formGroup}>
-          <label>O que você quer analisar?</label>
+          <label>O que você quer monitorar?</label>
           <input
             type="text"
             value={query}
@@ -4541,7 +4927,7 @@ const ResultPage: React.FC<{
   return (
     <div style={{ ...styles.resultPage, maxWidth: '1120px' }}>
       <button onClick={onBack} style={styles.backButton}>
-        ← Novo Diagnóstico
+        ← Nova análise
       </button>
 
       <div style={ui.hero}>
@@ -5136,7 +5522,7 @@ export default function ANAIAApp() {
   };
 
   const handleNewDiagnosis = () => {
-    setPage('research');
+    setPage('monitoring');
   };
 
   const handleAnalyze = async (data: any) => {
@@ -5194,7 +5580,7 @@ export default function ANAIAApp() {
       console.error('Diagnosis error:', error);
 
       if (error instanceof DOMException && error.name === 'AbortError') {
-        setPage('research');
+        setPage('monitoring');
         alert('A análise ultrapassou 110 segundos. Tente novamente em alguns instantes.');
         return;
       }
@@ -5220,10 +5606,10 @@ export default function ANAIAApp() {
   };
 
   const handleBack = () => {
-    if (page === 'result' || page === 'research') {
+    if (page === 'result' || page === 'monitoring' || page === 'research') {
       setPage('home');
     } else if (page === 'processing') {
-      setPage('research');
+      setPage('monitoring');
     }
   };
 
@@ -5285,14 +5671,18 @@ export default function ANAIAApp() {
             )}
 
             {page === 'research' && (
-              <DiagnosisInputPage
-                onAnalyze={handleAnalyze}
-                onBack={handleBack}
+              <PublicResearchPage
+                hideHeader
+                onBackHome={() => setPage('home')}
+                onLogin={() => setPage('home')}
               />
             )}
 
             {page === 'monitoring' && (
-              <MonitoringPage />
+              <DiagnosisInputPage
+                onAnalyze={handleAnalyze}
+                onBack={handleBack}
+              />
             )}
 
             {page === 'comparisons' && (
