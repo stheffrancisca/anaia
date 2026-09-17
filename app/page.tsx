@@ -305,81 +305,160 @@ const PublicLandingPage: React.FC<{
       });
   };
 
-  const [leadForm, setLeadForm] = React.useState({
+  const [orderForm, setOrderForm] = React.useState({
     name: '',
+    email: '',
     company: '',
     website: '',
-    email: '',
     segment: '',
-    main_competitor: '',
+    region: '',
+    competitors: '',
   });
-  const [leadStatus, setLeadStatus] = React.useState<
-    'idle' | 'sending' | 'success' | 'error'
-  >('idle');
-  const [leadMessage, setLeadMessage] = React.useState('');
 
-  const scrollToLeadForm = () => {
+  const [orderFlowStatus, setOrderFlowStatus] = React.useState<
+    'idle' | 'creating' | 'ready' | 'error'
+  >('idle');
+
+  const [orderMessage, setOrderMessage] = React.useState('');
+  const [checkoutData, setCheckoutData] = React.useState<{
+    order_id: string;
+    order_number: string;
+    amount: number;
+    currency: string;
+    beneficiary: string;
+    checkout_url: string;
+  } | null>(null);
+
+  const [paymentReturn, setPaymentReturn] = React.useState<{
+    orderNumber?: string;
+    status?: string;
+    paymentStatus?: string;
+    message?: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const localOrderId = params.get('order_id');
+    const checkoutResult = params.get('checkout');
+
+    if (!localOrderId || !checkoutResult) return;
+
+    let active = true;
+
+    const loadOrderStatus = async () => {
+      try {
+        const response = await fetch(
+          `/api/orders/status?order_id=${encodeURIComponent(localOrderId)}`,
+          {
+            method: 'GET',
+            cache: 'no-store',
+          }
+        );
+
+        const { data } = await readApiPayload(response);
+
+        if (!active || !response.ok || !data?.success) return;
+
+        const paymentStatus = String(data.order?.payment_status || '');
+        const commercialStatus = String(data.order?.commercial_status || '');
+
+        setPaymentReturn({
+          orderNumber: data.order?.order_number,
+          status: commercialStatus,
+          paymentStatus,
+          message:
+            paymentStatus === 'paid'
+              ? 'Pagamento confirmado. Seu diagnóstico entrou na fila de análise.'
+              : checkoutResult === 'pending'
+              ? 'Pagamento pendente. Assim que o Mercado Pago confirmar, o pedido será atualizado automaticamente.'
+              : checkoutResult === 'failure'
+              ? 'O pagamento não foi concluído. Você pode tentar novamente pelo checkout.'
+              : 'Recebemos o retorno do checkout e estamos aguardando a confirmação do pagamento.',
+        });
+      } catch {
+        // A página continua utilizável mesmo se a consulta de retorno falhar.
+      }
+    };
+
+    loadOrderStatus();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const scrollToOrderForm = () => {
     document
-      .getElementById('analise-gratuita')
+      .getElementById('contratar-diagnostico')
       ?.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
       });
   };
 
-  const handleLeadChange = (
+  const handleOrderChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = event.target;
-    setLeadForm((current) => ({
+
+    setOrderForm((current) => ({
       ...current,
       [name]: value,
     }));
+
+    if (orderFlowStatus === 'error') {
+      setOrderFlowStatus('idle');
+      setOrderMessage('');
+    }
   };
 
-  const handleLeadSubmit = async (event: React.FormEvent) => {
+  const handleCreateOrder = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    setLeadStatus('sending');
-    setLeadMessage('');
+    setOrderFlowStatus('creating');
+    setOrderMessage('');
+    setCheckoutData(null);
 
     try {
-      const response = await fetch('/api/leads', {
+      const response = await fetch('/api/orders/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(leadForm),
+        body: JSON.stringify(orderForm),
       });
 
       const { data, rawText } = await readApiPayload(response);
 
-      if (!response.ok || !data?.success) {
+      if (!response.ok || !data?.success || !data?.checkout_url) {
         throw new Error(
           data?.error ||
             rawText ||
-            `Não foi possível enviar a solicitação. HTTP ${response.status}`
+            `Não foi possível criar o pedido. HTTP ${response.status}`
         );
       }
 
-      setLeadStatus('success');
-      setLeadMessage(
-        'Solicitação recebida. Vamos analisar sua empresa e preparar os principais sinais de presença nas IAs.'
-      );
-      setLeadForm({
-        name: '',
-        company: '',
-        website: '',
-        email: '',
-        segment: '',
-        main_competitor: '',
+      setCheckoutData({
+        order_id: data.order_id,
+        order_number: data.order_number,
+        amount: data.amount,
+        currency: data.currency || 'BRL',
+        beneficiary: data.beneficiary,
+        checkout_url: data.checkout_url,
       });
+
+      setOrderFlowStatus('ready');
+      setOrderMessage(
+        'Pedido criado. Confira os dados abaixo antes de seguir para o pagamento.'
+      );
     } catch (error) {
-      setLeadStatus('error');
-      setLeadMessage(
+      setOrderFlowStatus('error');
+      setOrderMessage(
         error instanceof Error
           ? error.message
-          : 'Não foi possível enviar sua solicitação.'
+          : 'Não foi possível iniciar a contratação.'
       );
     }
   };
@@ -483,9 +562,9 @@ const PublicLandingPage: React.FC<{
             <button
               type="button"
               style={styles.publicPrimaryButton}
-              onClick={scrollToLeadForm}
+              onClick={scrollToOrderForm}
             >
-              Análise gratuita
+              Contratar diagnóstico
             </button>
           </div>
         </div>
@@ -507,18 +586,16 @@ const PublicLandingPage: React.FC<{
               </h1>
 
               <p style={styles.publicHeroText}>
-                Descubra como sua empresa aparece no ChatGPT, Gemini e Claude,
-                compare sua posição com concorrentes semelhantes e acompanhe
-                sua evolução ao longo do tempo com uma leitura clara e acionável.
+                Descubra como sua marca aparece nas respostas de IA com uma análise assistida, evidências verificáveis e uma leitura executiva clara.
               </p>
 
               <div style={styles.publicHeroActions}>
                 <button
                   type="button"
                   style={styles.publicHeroPrimary}
-                  onClick={scrollToLeadForm}
+                  onClick={scrollToOrderForm}
                 >
-                  Solicitar análise gratuita →
+                  Contratar diagnóstico — R$ 500 →
                 </button>
 
                 <button
@@ -531,7 +608,7 @@ const PublicLandingPage: React.FC<{
               </div>
 
               <div style={styles.publicTrustRow}>
-                <span>✓ Multi-IA</span>
+                <span>✓ Evidências verificáveis</span>
                 <span>✓ Benchmark competitivo</span>
                 <span>✓ Histórico de evolução</span>
                 <span>✓ Insights acionáveis</span>
@@ -770,7 +847,7 @@ const PublicLandingPage: React.FC<{
 
 
         <section
-          id="analise-gratuita"
+          id="contratar-diagnostico"
           style={{
             maxWidth: '1180px',
             margin: '0 auto',
@@ -793,7 +870,7 @@ const PublicLandingPage: React.FC<{
           >
             <div>
               <span style={styles.publicSectionEyebrow}>
-                ANÁLISE GRATUITA
+                DIAGNÓSTICO ASSISTIDO
               </span>
 
               <h2
@@ -804,19 +881,49 @@ const PublicLandingPage: React.FC<{
                   lineHeight: 1.12,
                 }}
               >
-                Descubra como sua empresa aparece nas respostas das IAs.
+                Diagnóstico assistido de visibilidade em IA
               </h2>
+
+              <div
+                style={{
+                  marginTop: '18px',
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <strong
+                  style={{
+                    fontSize: '38px',
+                    lineHeight: 1,
+                    letterSpacing: '-1.3px',
+                    color: '#0f172a',
+                  }}
+                >
+                  R$ 500
+                </strong>
+                <span
+                  style={{
+                    color: '#64748b',
+                    fontSize: '13px',
+                    fontWeight: 650,
+                  }}
+                >
+                  por marca
+                </span>
+              </div>
 
               <p
                 style={{
                   ...styles.publicSectionText,
-                  marginTop: '14px',
-                  maxWidth: '520px',
+                  marginTop: '16px',
+                  maxWidth: '540px',
                 }}
               >
-                Envie os dados da sua empresa. A ANAIA prepara uma leitura inicial
-                de presença, citações, concorrência e oportunidades nas respostas
-                analisadas de IA.
+                Uma análise manualmente revisada em uma ferramenta de IA disponível
+                no momento da execução, com evidências que permitem verificar o
+                resultado.
               </p>
 
               <div
@@ -827,10 +934,12 @@ const PublicLandingPage: React.FC<{
                 }}
               >
                 {[
-                  'Presença da marca nas respostas analisadas',
-                  'Empresas e concorrentes mais citados',
-                  'Modelos de IA com maior presença',
+                  'Perguntas utilizadas na análise',
+                  'Respostas coletadas e data da execução',
+                  'Fontes e referências disponíveis na resposta',
+                  'Presença da marca e concorrentes encontrados',
                   'Principais gaps e oportunidades',
+                  'Relatório executivo com leitura assistida',
                 ].map((item) => (
                   <div
                     key={item}
@@ -866,190 +975,455 @@ const PublicLandingPage: React.FC<{
 
               <div
                 style={{
-                  marginTop: '26px',
+                  marginTop: '22px',
                   padding: '14px',
                   borderRadius: '12px',
                   background: '#ffffff',
                   border: '1px solid #e2e8f0',
-                  color: '#64748b',
+                  color: '#334155',
+                  fontSize: '11px',
+                  lineHeight: 1.6,
+                }}
+              >
+                <strong>Prazo:</strong> até 48 horas após a confirmação do
+                pagamento e o recebimento dos dados necessários para a análise.
+              </div>
+
+              <div
+                style={{
+                  marginTop: '12px',
+                  padding: '14px',
+                  borderRadius: '12px',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  color: '#92400e',
                   fontSize: '11px',
                   lineHeight: 1.55,
                 }}
               >
-                A ANAIA mede presença dentro da amostra de respostas processadas
-                pela plataforma. Não representa volume global de buscas internas
-                do ChatGPT, Gemini ou Claude.
+                Nesta oferta inicial, a entrega contratada considera
+                <strong> uma ferramenta de IA</strong>. A ANAIA não apresenta
+                volume global de buscas internas das plataformas como se fosse
+                dado público.
               </div>
-            </div>
-
-            <form
-              onSubmit={handleLeadSubmit}
-              style={{
-                background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '18px',
-                padding: '24px',
-                boxShadow: '0 12px 34px rgba(15,23,42,.05)',
-              }}
-            >
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize: '21px',
-                  color: '#0f172a',
-                }}
-              >
-                Solicitar análise gratuita
-              </h3>
-
-              <p
-                style={{
-                  margin: '7px 0 20px',
-                  color: '#64748b',
-                  fontSize: '12px',
-                  lineHeight: 1.5,
-                }}
-              >
-                Preencha os dados abaixo para entrar na fila de análise.
-              </p>
 
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
-                  gap: '14px',
+                  marginTop: '24px',
+                  padding: '18px',
+                  borderRadius: '14px',
+                  background: '#0f172a',
+                  color: '#ffffff',
                 }}
               >
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    Seu nome *
-                  </span>
-                  <input
-                    name="name"
-                    value={leadForm.name}
-                    onChange={handleLeadChange}
-                    required
-                    placeholder="Seu nome"
-                    style={styles.input}
-                  />
-                </label>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    padding: '5px 8px',
+                    borderRadius: '999px',
+                    background: 'rgba(255,255,255,.10)',
+                    color: '#bfdbfe',
+                    fontSize: '9px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.7px',
+                  }}
+                >
+                  Prévia do relatório · exemplo ilustrativo
+                </span>
 
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    Empresa *
-                  </span>
-                  <input
-                    name="company"
-                    value={leadForm.company}
-                    onChange={handleLeadChange}
-                    required
-                    placeholder="Nome da empresa"
-                    style={styles.input}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    E-mail profissional *
-                  </span>
-                  <input
-                    type="email"
-                    name="email"
-                    value={leadForm.email}
-                    onChange={handleLeadChange}
-                    required
-                    placeholder="voce@empresa.com"
-                    style={styles.input}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    Site
-                  </span>
-                  <input
-                    name="website"
-                    value={leadForm.website}
-                    onChange={handleLeadChange}
-                    placeholder="https://empresa.com.br"
-                    style={styles.input}
-                  />
-                </label>
-
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    Segmento *
-                  </span>
-                  <select
-                    name="segment"
-                    value={leadForm.segment}
-                    onChange={handleLeadChange}
-                    required
-                    style={styles.input}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="Agência / Marketing">Agência / Marketing</option>
-                    <option value="SaaS / Tecnologia">SaaS / Tecnologia</option>
-                    <option value="Fintech / Banco">Fintech / Banco</option>
-                    <option value="E-commerce / Varejo">E-commerce / Varejo</option>
-                    <option value="Educação">Educação</option>
-                    <option value="Saúde">Saúde</option>
-                    <option value="Serviços B2B">Serviços B2B</option>
-                    <option value="Outro">Outro</option>
-                  </select>
-                </label>
-
-                <label style={{ display: 'grid', gap: '6px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700 }}>
-                    Concorrente principal
-                  </span>
-                  <input
-                    name="main_competitor"
-                    value={leadForm.main_competitor}
-                    onChange={handleLeadChange}
-                    placeholder="Ex.: concorrente.com"
-                    style={styles.input}
-                  />
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={leadStatus === 'sending'}
-                style={{
-                  ...styles.publicHeroPrimary,
-                  width: '100%',
-                  marginTop: '18px',
-                  opacity: leadStatus === 'sending' ? 0.65 : 1,
-                }}
-              >
-                {leadStatus === 'sending'
-                  ? 'Enviando...'
-                  : 'Quero minha análise gratuita →'}
-              </button>
-
-              {leadMessage && (
                 <div
                   style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+                    gap: '10px',
                     marginTop: '14px',
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    background:
-                      leadStatus === 'success' ? '#f0fdf4' : '#fef2f2',
-                    border:
-                      leadStatus === 'success'
-                        ? '1px solid #bbf7d0'
-                        : '1px solid #fecaca',
-                    color:
-                      leadStatus === 'success' ? '#166534' : '#991b1b',
-                    fontSize: '11px',
+                  }}
+                >
+                  {[
+                    ['Perguntas', 'Lista completa'],
+                    ['Respostas', 'Texto coletado'],
+                    ['Data', 'Registro da execução'],
+                    ['Fontes', 'Quando disponíveis'],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      style={{
+                        padding: '11px',
+                        borderRadius: '10px',
+                        background: 'rgba(255,255,255,.07)',
+                        border: '1px solid rgba(255,255,255,.09)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          color: '#93c5fd',
+                          fontSize: '9px',
+                        }}
+                      >
+                        {label}
+                      </span>
+                      <strong
+                        style={{
+                          display: 'block',
+                          marginTop: '4px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {value}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+
+                <p
+                  style={{
+                    margin: '12px 0 0',
+                    color: '#cbd5e1',
+                    fontSize: '10px',
                     lineHeight: 1.5,
                   }}
                 >
-                  {leadMessage}
+                  Antes do lançamento comercial definitivo, esta prévia deve ser
+                  substituída por um caso real anonimizado.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              {paymentReturn && (
+                <div
+                  style={{
+                    marginBottom: '14px',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    background:
+                      paymentReturn.paymentStatus === 'paid'
+                        ? '#f0fdf4'
+                        : '#eff6ff',
+                    border:
+                      paymentReturn.paymentStatus === 'paid'
+                        ? '1px solid #bbf7d0'
+                        : '1px solid #bfdbfe',
+                    color:
+                      paymentReturn.paymentStatus === 'paid'
+                        ? '#166534'
+                        : '#1e3a8a',
+                    fontSize: '11px',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  <strong>
+                    {paymentReturn.orderNumber
+                      ? `Pedido ${paymentReturn.orderNumber}`
+                      : 'Retorno do pagamento'}
+                  </strong>
+                  <div style={{ marginTop: '4px' }}>
+                    {paymentReturn.message}
+                  </div>
                 </div>
               )}
-            </form>
+
+              <form
+                onSubmit={handleCreateOrder}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '18px',
+                  padding: '24px',
+                  boxShadow: '0 12px 34px rgba(15,23,42,.05)',
+                }}
+              >
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: '21px',
+                    color: '#0f172a',
+                  }}
+                >
+                  Contratar diagnóstico
+                </h3>
+
+                <p
+                  style={{
+                    margin: '7px 0 20px',
+                    color: '#64748b',
+                    fontSize: '12px',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Não é necessário criar uma conta. Preencha os dados para gerar
+                  seu pedido e acessar o checkout.
+                </p>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+                    gap: '14px',
+                  }}
+                >
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Nome *
+                    </span>
+                    <input
+                      name="name"
+                      value={orderForm.name}
+                      onChange={handleOrderChange}
+                      required
+                      placeholder="Seu nome"
+                      style={styles.input}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      E-mail *
+                    </span>
+                    <input
+                      type="email"
+                      name="email"
+                      value={orderForm.email}
+                      onChange={handleOrderChange}
+                      required
+                      placeholder="voce@empresa.com"
+                      style={styles.input}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Empresa *
+                    </span>
+                    <input
+                      name="company"
+                      value={orderForm.company}
+                      onChange={handleOrderChange}
+                      required
+                      placeholder="Nome da empresa"
+                      style={styles.input}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Site *
+                    </span>
+                    <input
+                      name="website"
+                      value={orderForm.website}
+                      onChange={handleOrderChange}
+                      required
+                      placeholder="https://empresa.com.br"
+                      style={styles.input}
+                    />
+                  </label>
+
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Segmento *
+                    </span>
+                    <select
+                      name="segment"
+                      value={orderForm.segment}
+                      onChange={handleOrderChange}
+                      required
+                      style={styles.input}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="Agência / Marketing">Agência / Marketing</option>
+                      <option value="SaaS / Tecnologia">SaaS / Tecnologia</option>
+                      <option value="Fintech / Banco">Fintech / Banco</option>
+                      <option value="E-commerce / Varejo">E-commerce / Varejo</option>
+                      <option value="Educação">Educação</option>
+                      <option value="Saúde">Saúde</option>
+                      <option value="Serviços B2B">Serviços B2B</option>
+                      <option value="Outro">Outro</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'grid', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Região *
+                    </span>
+                    <input
+                      name="region"
+                      value={orderForm.region}
+                      onChange={handleOrderChange}
+                      required
+                      placeholder="Ex.: Brasil / São Paulo"
+                      style={styles.input}
+                    />
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'grid',
+                      gap: '6px',
+                      gridColumn: '1 / -1',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', fontWeight: 700 }}>
+                      Concorrentes (opcional)
+                    </span>
+                    <input
+                      name="competitors"
+                      value={orderForm.competitors}
+                      onChange={handleOrderChange}
+                      placeholder="Ex.: Concorrente A, Concorrente B"
+                      style={styles.input}
+                    />
+                  </label>
+                </div>
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '14px',
+                    alignItems: 'center',
+                    marginTop: '18px',
+                    padding: '13px 14px',
+                    borderRadius: '12px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                  }}
+                >
+                  <span
+                    style={{
+                      color: '#475569',
+                      fontSize: '11px',
+                    }}
+                  >
+                    Valor do diagnóstico
+                  </span>
+                  <strong
+                    style={{
+                      color: '#0f172a',
+                      fontSize: '18px',
+                    }}
+                  >
+                    R$ 500,00
+                  </strong>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={orderFlowStatus === 'creating'}
+                  style={{
+                    ...styles.publicHeroPrimary,
+                    width: '100%',
+                    marginTop: '16px',
+                    opacity: orderFlowStatus === 'creating' ? 0.65 : 1,
+                  }}
+                >
+                  {orderFlowStatus === 'creating'
+                    ? 'Criando pedido...'
+                    : 'Gerar pedido de R$ 500 →'}
+                </button>
+
+                {orderMessage && (
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background:
+                        orderFlowStatus === 'error'
+                          ? '#fef2f2'
+                          : '#eff6ff',
+                      border:
+                        orderFlowStatus === 'error'
+                          ? '1px solid #fecaca'
+                          : '1px solid #bfdbfe',
+                      color:
+                        orderFlowStatus === 'error'
+                          ? '#991b1b'
+                          : '#1e3a8a',
+                      fontSize: '11px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {orderMessage}
+                  </div>
+                )}
+
+                {checkoutData && (
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      padding: '16px',
+                      borderRadius: '12px',
+                      background: '#f8fafc',
+                      border: '1px solid #dbe3ef',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gap: '7px',
+                        fontSize: '11px',
+                        color: '#475569',
+                      }}
+                    >
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Pedido:</strong>{' '}
+                        {checkoutData.order_number}
+                      </div>
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>Valor:</strong>{' '}
+                        R$ {checkoutData.amount.toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>
+                          Beneficiário:
+                        </strong>{' '}
+                        {checkoutData.beneficiary}
+                      </div>
+                      <div>
+                        <strong style={{ color: '#0f172a' }}>
+                          Pagamento:
+                        </strong>{' '}
+                        processado pelo Mercado Pago
+                      </div>
+                    </div>
+
+                    <a
+                      href={checkoutData.checkout_url}
+                      style={{
+                        ...styles.publicHeroPrimary,
+                        display: 'flex',
+                        width: '100%',
+                        marginTop: '14px',
+                        textDecoration: 'none',
+                        boxSizing: 'border-box',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      Ir para pagamento seguro →
+                    </a>
+
+                    <p
+                      style={{
+                        margin: '10px 0 0',
+                        color: '#64748b',
+                        fontSize: '9px',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      O pedido só será marcado como pago após a confirmação
+                      server-side do Mercado Pago.
+                    </p>
+                  </div>
+                )}
+              </form>
+            </div>
           </div>
         </section>
 
@@ -1158,9 +1532,9 @@ const PublicLandingPage: React.FC<{
             <button
               type="button"
               style={styles.publicHeroPrimary}
-              onClick={scrollToLeadForm}
+              onClick={scrollToOrderForm}
             >
-              Solicitar análise gratuita →
+              Contratar diagnóstico — R$ 500 →
             </button>
           </div>
         </section>
