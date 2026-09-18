@@ -88,11 +88,6 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_APP_URL ||
       new URL(request.url).origin;
 
-    const isPublicHttps =
-      appUrl.startsWith('https://') &&
-      !appUrl.includes('localhost') &&
-      !appUrl.includes('127.0.0.1');
-
     const successUrl = `${appUrl}/?checkout=success&order_id=${internalOrderId}`;
     const failureUrl = `${appUrl}/?checkout=failure&order_id=${internalOrderId}`;
     const pendingUrl = `${appUrl}/?checkout=pending&order_id=${internalOrderId}`;
@@ -155,11 +150,6 @@ export async function POST(request: Request) {
         },
       },
     };
-
-    if (isPublicHttps) {
-      mercadoPagoPayload.config.notification_url =
-        `${appUrl}/api/webhooks/mercadopago`;
-    }
 
     const mpResponse = await fetch(
       'https://api.mercadopago.com/v1/orders',
