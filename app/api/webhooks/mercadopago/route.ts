@@ -20,23 +20,36 @@ function parseSignature(value: string) {
 
 function validateWebhookSignature(params: {
   xSignature: string;
-  xRequestId: string;
-  dataId: string;
+  xRequestId?: string;
+  queryDataId?: string;
   secret: string;
 }) {
-  const { xSignature, xRequestId, secret } = params;
-  const dataId = params.dataId.toLowerCase();
-
-  const parsed = parseSignature(xSignature);
+  const parsed = parseSignature(params.xSignature);
   const ts = parsed.ts;
   const receivedHash = parsed.v1;
 
   if (!ts || !receivedHash) return false;
 
-  const manifest =
-    `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+  const manifestParts: string[] = [];
 
-  const expectedHash = createHmac('sha256', secret)
+  // Mercado Pago usa o data.id do QUERY PARAM para assinar.
+  // Se ele não existir, esse par deve ser omitido do manifest.
+  if (params.queryDataId) {
+    manifestParts.push(`id:${params.queryDataId.toLowerCase()}`);
+  }
+
+  if (params.xRequestId) {
+    manifestParts.push(`request-id:${params.xRequestId}`);
+  }
+
+  manifestParts.push(`ts:${ts}`);
+
+  const manifest = `${manifestParts.join(';')};`;
+
+  const expectedHash = createHmac(
+    'sha256',
+    params.secret.trim()
+  )
     .update(manifest)
     .digest('hex');
 
@@ -155,7 +168,9 @@ export async function POST(request: Request) {
 
     const url = new URL(request.url);
 
-    let dataId = String(
+    // IMPORTANTE:
+    // Para validar a assinatura, usamos SOMENTE o data.id vindo do query param.
+    const queryDataId = String(
       url.searchParams.get('data.id') ||
       url.searchParams.get('id') ||
       ''
@@ -169,9 +184,13 @@ export async function POST(request: Request) {
       body = null;
     }
 
-    if (!dataId && body?.data?.id) {
-      dataId = String(body.data.id).trim();
-    }
+    // Para consultar a Order depois da validação, podemos usar query param
+    // ou, se o simulador não o enviar, o data.id do body.
+    const resourceDataId = String(
+      queryDataId ||
+      body?.data?.id ||
+      ''
+    ).trim();
 
     const xSignature =
       request.headers.get('x-signature') || '';
@@ -179,17 +198,21 @@ export async function POST(request: Request) {
       request.headers.get('x-request-id') || '';
 
     if (
-      !dataId ||
       !xSignature ||
-      !xRequestId ||
       !validateWebhookSignature({
         xSignature,
         xRequestId,
-        dataId,
+        queryDataId,
         secret: webhookSecret,
       })
     ) {
-      console.error('Invalid Mercado Pago webhook signature.');
+      console.error('Invalid Mercado Pago webhook signature.', {
+        hasQueryDataId: Boolean(queryDataId),
+        hasRequestId: Boolean(xRequestId),
+        hasSignature: Boolean(xSignature),
+        eventType: body?.type || null,
+        action: body?.action || null,
+      });
 
       return NextResponse.json(
         {
@@ -199,8 +222,19 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!resourceDataId) {
+      console.error('Mercado Pago webhook without resource id.');
+
+      return NextResponse.json(
+        {
+          success: false,
+        },
+        { status: 400 }
+      );
+    }
+
     const mpResponse = await fetch(
-      `https://api.mercadopago.com/v1/orders/${encodeURIComponent(dataId)}`,
+      `https://api.mercadopago.com/v1/orders/${encodeURIComponent(resourceDataId)}`,
       {
         method: 'GET',
         headers: {
