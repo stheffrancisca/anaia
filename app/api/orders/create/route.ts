@@ -128,7 +128,6 @@ export async function POST(request: Request) {
       processing_mode: 'manual',
       total_amount: PRICE.toFixed(2),
       external_reference: internalOrderId,
-      description: 'Diagnóstico assistido de visibilidade em IA — ANAIA',
       payer: {
         email,
       },
@@ -137,18 +136,8 @@ export async function POST(request: Request) {
           title: 'Diagnóstico assistido de visibilidade em IA',
           unit_price: PRICE.toFixed(2),
           quantity: 1,
-          unit_measure: 'unit',
-          total_amount: PRICE.toFixed(2),
         },
       ],
-      config: {
-        online: {
-          success_url: successUrl,
-          failure_url: failureUrl,
-          pending_url: pendingUrl,
-          auto_return: 'all',
-        },
-      },
     };
 
     const mpResponse = await fetch(
