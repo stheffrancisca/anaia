@@ -1,66 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createHmac, timingSafeEqual } from 'crypto';
 import { createSupabaseAdminClient } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
-function parseSignature(value: string) {
-  const result: Record<string, string> = {};
+import {
+  WebhookSignatureValidator,
+  InvalidWebhookSignatureError,
+} from 'mercadopago';
 
-  for (const part of value.split(',')) {
-    const [key, rawValue] = part.split('=', 2);
-
-    if (key && rawValue) {
-      result[key.trim()] = rawValue.trim();
-    }
-  }
-
-  return result;
-}
-
-function validateWebhookSignature(params: {
-  xSignature: string;
-  xRequestId?: string;
-  queryDataId?: string;
-  secret: string;
-}) {
-  const parsed = parseSignature(params.xSignature);
-  const ts = parsed.ts;
-  const receivedHash = parsed.v1;
-
-  if (!ts || !receivedHash) return false;
-
-  const manifestParts: string[] = [];
-
-  // Mercado Pago usa o data.id do QUERY PARAM para assinar.
-  // Se ele não existir, esse par deve ser omitido do manifest.
-  if (params.queryDataId) {
-    manifestParts.push(`id:${params.queryDataId.toLowerCase()}`);
-  }
-
-  if (params.xRequestId) {
-    manifestParts.push(`request-id:${params.xRequestId}`);
-  }
-
-  manifestParts.push(`ts:${ts}`);
-
-  const manifest = `${manifestParts.join(';')};`;
-
-  const expectedHash = createHmac(
-    'sha256',
-    params.secret.trim()
-  )
-    .update(manifest)
-    .digest('hex');
-
-  const received = Buffer.from(receivedHash, 'utf8');
-  const expected = Buffer.from(expectedHash, 'utf8');
-
-  return (
-    received.length === expected.length &&
-    timingSafeEqual(received, expected)
-  );
-}
 
 async function sendConfirmationEmail(params: {
   to: string;
@@ -197,28 +144,43 @@ export async function POST(request: Request) {
     const xRequestId =
       request.headers.get('x-request-id') || '';
 
-    if (
-      !xSignature ||
-      !validateWebhookSignature({
+    try {
+      WebhookSignatureValidator.validate({
         xSignature,
         xRequestId,
-        queryDataId,
-        secret: webhookSecret,
-      })
-    ) {
-      console.error('Invalid Mercado Pago webhook signature.', {
-        hasQueryDataId: Boolean(queryDataId),
-        hasRequestId: Boolean(xRequestId),
-        hasSignature: Boolean(xSignature),
-        eventType: body?.type || null,
-        action: body?.action || null,
+        dataId: queryDataId,
+        secret: webhookSecret.trim(),
       });
+    } catch (error) {
+      if (error instanceof InvalidWebhookSignatureError) {
+        console.error('Invalid Mercado Pago webhook signature (SDK).', {
+          requestUrl: request.url,
+          queryDataId: queryDataId || null,
+          hasRequestId: Boolean(xRequestId),
+          hasSignature: Boolean(xSignature),
+          secretLength: webhookSecret.trim().length,
+          eventType: body?.type || null,
+          action: body?.action || null,
+          liveMode: body?.live_mode ?? null,
+        });
+
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'invalid_webhook_signature',
+          },
+          { status: 401 }
+        );
+      }
+
+      console.error('Mercado Pago webhook validator unexpected error:', error);
 
       return NextResponse.json(
         {
           success: false,
+          error: 'webhook_validator_error',
         },
-        { status: 401 }
+        { status: 500 }
       );
     }
 
