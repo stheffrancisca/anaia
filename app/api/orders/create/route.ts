@@ -186,23 +186,40 @@ export async function POST(request: Request) {
     }
 
     if (!mpResponse.ok || !mpData?.id || !mpData?.checkout_url) {
+      const firstDetail =
+        Array.isArray(mpData?.errors) && mpData.errors.length > 0
+          ? mpData.errors[0]
+          : null;
+
       const mpErrorCode =
+        firstDetail?.code ||
+        firstDetail?.error ||
         mpData?.code ||
         mpData?.error ||
-        mpData?.message ||
         `HTTP_${mpResponse.status}`;
 
       const mpErrorMessage =
+        firstDetail?.message ||
+        firstDetail?.description ||
         mpData?.message ||
         mpData?.error ||
         'Falha ao criar checkout no Mercado Pago.';
 
-      console.error('Mercado Pago order error:', {
-        status: mpResponse.status,
-        code: mpErrorCode,
-        message: mpErrorMessage,
-        body: mpData || mpRaw,
-      });
+      console.error(
+        'Mercado Pago order error:',
+        JSON.stringify(
+          {
+            status: mpResponse.status,
+            code: mpErrorCode,
+            message: mpErrorMessage,
+            errors: mpData?.errors ?? null,
+            details: mpData?.details ?? null,
+            body: mpData || mpRaw,
+          },
+          null,
+          2
+        )
+      );
 
       await supabase
         .from('orders')
@@ -221,6 +238,7 @@ export async function POST(request: Request) {
           error:
             'O pedido foi registrado, mas o Mercado Pago recusou a criação do checkout.',
           provider_code: String(mpErrorCode),
+          provider_message: String(mpErrorMessage),
         },
         { status: 502 }
       );
