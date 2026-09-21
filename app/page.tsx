@@ -101,6 +101,9 @@ interface AdminOrder {
   payment_confirmed_at: string | null;
   delivery_due_at: string | null;
   analysis_started_at: string | null;
+  analysis_completed_at: string | null;
+  analysis_error: string | null;
+  diagnostic_id: string | null;
   delivered_at: string | null;
   confirmation_email_sent_at: string | null;
   notes: string | null;
@@ -505,7 +508,7 @@ const PublicLandingPage: React.FC<{
       icon: '◎',
       title: 'Descubra como sua marca aparece',
       text:
-        'Veja presença, recomendação, relevância e posição nas respostas das principais inteligências artificiais.',
+        'Veja presença, recomendação, relevância e posição com evidências da execução e metodologia documentada.',
     },
     {
       icon: '↗',
@@ -532,7 +535,7 @@ const PublicLandingPage: React.FC<{
       number: '02',
       title: 'A ANAIA analisa',
       text:
-        'A plataforma consulta múltiplos modelos de IA e consolida apenas respostas válidas.',
+        'A ANAIA executa a análise nas IAs disponíveis, preserva as evidências e considera apenas respostas válidas. A oferta contratada garante pelo menos uma IA válida.',
     },
     {
       number: '03',
@@ -958,9 +961,9 @@ const PublicLandingPage: React.FC<{
                   maxWidth: '540px',
                 }}
               >
-                Uma análise manualmente revisada em uma ferramenta de IA disponível
-                no momento da execução, com evidências que permitem verificar o
-                resultado.
+                Uma análise assistida e revisada, com garantia de pelo menos uma
+                ferramenta de IA válida na execução, preservando perguntas,
+                respostas, data e evidências para conferência.
               </p>
 
               <div
@@ -971,12 +974,12 @@ const PublicLandingPage: React.FC<{
                 }}
               >
                 {[
-                  'Perguntas utilizadas na análise',
-                  'Respostas coletadas e data da execução',
-                  'Fontes e referências disponíveis na resposta',
-                  'Presença da marca e concorrentes encontrados',
-                  'Principais gaps e oportunidades',
-                  'Relatório executivo com leitura assistida',
+                  '10 perguntas estratégicas na IA principal da execução',
+                  'Respostas originais coletadas e data da execução',
+                  'Fontes e referências disponibilizadas pela IA, quando existirem',
+                  'Comparação com até 3 concorrentes informados ou identificados',
+                  'Presença, recomendação, relevância, posição e principais gaps',
+                  'Relatório executivo digital com leitura assistida',
                 ].map((item) => (
                   <div
                     key={item}
@@ -1038,10 +1041,11 @@ const PublicLandingPage: React.FC<{
                   lineHeight: 1.55,
                 }}
               >
-                Nesta oferta inicial, a entrega contratada considera
-                <strong> uma ferramenta de IA</strong>. A ANAIA não apresenta
-                volume global de buscas internas das plataformas como se fosse
-                dado público.
+                Nesta oferta inicial, a entrega garante
+                <strong> pelo menos uma ferramenta de IA válida</strong>. Se outras
+                IAs estiverem disponíveis durante a execução, elas podem complementar
+                o diagnóstico. A ANAIA não apresenta volume global de buscas internas
+                das plataformas como se fosse dado público.
               </div>
 
               <div
@@ -1607,6 +1611,12 @@ const PublicLandingPage: React.FC<{
               style={styles.publicFooterLink}
             >
               YouTube
+            </a>
+            <a
+              href="mailto:contato@aparecanaia.com.br"
+              style={styles.publicFooterLink}
+            >
+              Contato
             </a>
           </div>
         </div>
@@ -3156,6 +3166,8 @@ const OrdersPage: React.FC = () => {
   const [filter, setFilter] = React.useState('all');
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [updating, setUpdating] = React.useState(false);
+  const [analyzingId, setAnalyzingId] = React.useState<string | null>(null);
+  const [analysisMessage, setAnalysisMessage] = React.useState('');
   const [notesDraft, setNotesDraft] = React.useState('');
 
   const loadOrders = React.useCallback(async () => {
@@ -3213,6 +3225,62 @@ const OrdersPage: React.FC = () => {
     setNotesDraft(selectedOrder?.notes || '');
   }, [selectedOrder?.id, selectedOrder?.notes]);
 
+  const patchOrder = async (
+    orderId: string,
+    payload: {
+      status?: string;
+      notes?: string;
+      diagnostic_id?: string | null;
+      analysis_error?: string | null;
+    }
+  ): Promise<AdminOrder> => {
+    const response = await fetch('/api/orders', {
+      method: 'PATCH',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        id: orderId,
+        ...(payload.status
+          ? { commercial_status: payload.status }
+          : {}),
+        ...(payload.notes !== undefined
+          ? { notes: payload.notes }
+          : {}),
+        ...(payload.diagnostic_id !== undefined
+          ? { diagnostic_id: payload.diagnostic_id }
+          : {}),
+        ...(payload.analysis_error !== undefined
+          ? { analysis_error: payload.analysis_error }
+          : {}),
+      }),
+    });
+
+    const { data } = await readApiPayload(response);
+
+    if (!response.ok || !data?.success || !data?.order) {
+      throw new Error(
+        data?.error ||
+          `Não foi possível atualizar o pedido. HTTP ${response.status}`
+      );
+    }
+
+    const updatedOrder = data.order as AdminOrder;
+
+    setOrders((current) =>
+      current.map((item) =>
+        item.id === updatedOrder.id ? updatedOrder : item
+      )
+    );
+
+    setNotesDraft(updatedOrder.notes || '');
+
+    return updatedOrder;
+  };
+
   const updateOrder = async (
     payload: {
       status?: string;
@@ -3223,43 +3291,10 @@ const OrdersPage: React.FC = () => {
 
     setUpdating(true);
     setError('');
+    setAnalysisMessage('');
 
     try {
-      const response = await fetch('/api/orders', {
-        method: 'PATCH',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          id: selectedOrder.id,
-          ...(payload.status
-            ? { commercial_status: payload.status }
-            : {}),
-          ...(payload.notes !== undefined
-            ? { notes: payload.notes }
-            : {}),
-        }),
-      });
-
-      const { data } = await readApiPayload(response);
-
-      if (!response.ok || !data?.success || !data?.order) {
-        throw new Error(
-          data?.error ||
-            `Não foi possível atualizar o pedido. HTTP ${response.status}`
-        );
-      }
-
-      setOrders((current) =>
-        current.map((item) =>
-          item.id === data.order.id ? data.order : item
-        )
-      );
-
-      setNotesDraft(data.order.notes || '');
+      await patchOrder(selectedOrder.id, payload);
     } catch (updateError) {
       setError(
         updateError instanceof Error
@@ -3268,6 +3303,107 @@ const OrdersPage: React.FC = () => {
       );
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const startPaidAnalysis = async () => {
+    if (!selectedOrder) return;
+
+    if (selectedOrder.payment_status !== 'paid') {
+      setError('A análise só pode ser iniciada após a confirmação do pagamento.');
+      return;
+    }
+
+    setUpdating(true);
+    setAnalyzingId(selectedOrder.id);
+    setError('');
+    setAnalysisMessage('');
+
+    try {
+      // 1) Registra oficialmente o início operacional.
+      await patchOrder(selectedOrder.id, {
+        status: 'em_analise',
+        notes: notesDraft,
+        analysis_error: null,
+      });
+
+      const competitors = String(selectedOrder.competitors || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 3);
+
+      // 2) Executa o diagnóstico usando exatamente os dados contratados.
+      const response = await fetch('/api/diagnose', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          query: selectedOrder.company || selectedOrder.website,
+          company_name: selectedOrder.company,
+          website: selectedOrder.website || undefined,
+          segment: selectedOrder.segment || undefined,
+          location: selectedOrder.region || undefined,
+          competitors,
+          data_sources: ['paid_order'],
+          confidence: 100,
+        }),
+      });
+
+      const { data, rawText } = await readApiPayload(response);
+
+      if (!response.ok || !data) {
+        throw new Error(
+          data?.error ||
+            rawText ||
+            `Falha ao executar diagnóstico. HTTP ${response.status}`
+        );
+      }
+
+      const diagnosticId =
+        typeof data?.persistence?.diagnostic_id === 'string'
+          ? data.persistence.diagnostic_id
+          : null;
+
+      if (!data?.persistence?.saved || !diagnosticId) {
+        throw new Error(
+          data?.persistence?.error ||
+            'A análise terminou, mas o diagnóstico não foi persistido no banco.'
+        );
+      }
+
+      // 3) Vincula o diagnóstico real ao pedido.
+      await patchOrder(selectedOrder.id, {
+        diagnostic_id: diagnosticId,
+        analysis_error: null,
+      });
+
+      setAnalysisMessage(
+        `Diagnóstico concluído e vinculado ao pedido. ID: ${diagnosticId}`
+      );
+    } catch (analysisError) {
+      const message =
+        analysisError instanceof Error
+          ? analysisError.message
+          : 'Não foi possível concluir a análise.';
+
+      // Mantemos o pedido em análise, mas registramos o erro para auditoria/retry.
+      try {
+        await patchOrder(selectedOrder.id, {
+          analysis_error: message,
+        });
+      } catch {
+        // Não mascarar o erro original caso o registro auxiliar também falhe.
+      }
+
+      setError(message);
+    } finally {
+      setUpdating(false);
+      setAnalyzingId(null);
     }
   };
 
@@ -3716,6 +3852,8 @@ const OrdersPage: React.FC = () => {
                 ['Pagamento confirmado', formatAdminDate(selectedOrder.payment_confirmed_at)],
                 ['Prazo de entrega', formatAdminDate(selectedOrder.delivery_due_at)],
                 ['Análise iniciada', formatAdminDate(selectedOrder.analysis_started_at)],
+                ['Análise concluída', formatAdminDate(selectedOrder.analysis_completed_at)],
+                ['Diagnóstico vinculado', selectedOrder.diagnostic_id || '—'],
                 ['Entregue em', formatAdminDate(selectedOrder.delivered_at)],
                 ['E-mail de confirmação', formatAdminDate(selectedOrder.confirmation_email_sent_at)],
                 ['Mercado Pago', selectedOrder.mercado_pago_order_id || '—'],
@@ -3753,6 +3891,26 @@ const OrdersPage: React.FC = () => {
                 </div>
               ))}
             </div>
+
+            {(analysisMessage || selectedOrder.analysis_error) && (
+              <div
+                style={{
+                  marginTop: '16px',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: analysisMessage ? '#f0fdf4' : '#fef2f2',
+                  border: analysisMessage
+                    ? '1px solid #bbf7d0'
+                    : '1px solid #fecaca',
+                  color: analysisMessage ? '#166534' : '#991b1b',
+                  fontSize: '10px',
+                  lineHeight: 1.5,
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {analysisMessage || selectedOrder.analysis_error}
+              </div>
+            )}
 
             <div style={{ marginTop: '16px' }}>
               <label
@@ -3865,12 +4023,17 @@ const OrdersPage: React.FC = () => {
                   <button
                     key={status}
                     type="button"
-                    onClick={() =>
+                    onClick={() => {
+                      if (status === 'em_analise') {
+                        startPaidAnalysis();
+                        return;
+                      }
+
                       updateOrder({
                         status,
                         notes: notesDraft,
-                      })
-                    }
+                      });
+                    }}
                     disabled={disabled}
                     style={{
                       border:
@@ -3894,7 +4057,10 @@ const OrdersPage: React.FC = () => {
                       opacity: disabled ? 0.45 : 1,
                     }}
                   >
-                    {label}
+                    {status === 'em_analise' &&
+                    analyzingId === selectedOrder.id
+                      ? 'Executando diagnóstico...'
+                      : label}
                   </button>
                 );
               })}

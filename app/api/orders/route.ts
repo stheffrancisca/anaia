@@ -120,6 +120,9 @@ export async function GET() {
           'payment_confirmed_at',
           'delivery_due_at',
           'analysis_started_at',
+          'analysis_completed_at',
+          'analysis_error',
+          'diagnostic_id',
           'delivered_at',
           'confirmation_email_sent_at',
           'source',
@@ -182,6 +185,20 @@ export async function PATCH(request: Request) {
         ? body.notes.trim().slice(0, 5000)
         : undefined;
 
+    const diagnosticId =
+      body?.diagnostic_id === null
+        ? null
+        : typeof body?.diagnostic_id === 'string'
+        ? body.diagnostic_id.trim()
+        : undefined;
+
+    const analysisError =
+      body?.analysis_error === null
+        ? null
+        : typeof body?.analysis_error === 'string'
+        ? body.analysis_error.trim().slice(0, 5000)
+        : undefined;
+
     if (!id) {
       return NextResponse.json(
         {
@@ -205,7 +222,12 @@ export async function PATCH(request: Request) {
       );
     }
 
-    if (!commercialStatus && notes === undefined) {
+    if (
+      !commercialStatus &&
+      notes === undefined &&
+      diagnosticId === undefined &&
+      analysisError === undefined
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -221,7 +243,7 @@ export async function PATCH(request: Request) {
       await supabase
         .from('orders')
         .select(
-          'id, commercial_status, analysis_started_at, delivered_at'
+          'id, payment_status, commercial_status, analysis_started_at, analysis_completed_at, delivered_at, diagnostic_id'
         )
         .eq('id', id)
         .maybeSingle();
@@ -245,6 +267,41 @@ export async function PATCH(request: Request) {
           error: 'Pedido não encontrado.',
         },
         { status: 404 }
+      );
+    }
+
+    const paidOnlyStatuses = new Set([
+      'pago',
+      'em_analise',
+      'entregue',
+    ]);
+
+    if (
+      commercialStatus &&
+      paidOnlyStatuses.has(commercialStatus) &&
+      current.payment_status !== 'paid'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Este status exige pagamento confirmado pelo Mercado Pago.',
+        },
+        { status: 409 }
+      );
+    }
+
+    if (
+      diagnosticId !== undefined &&
+      current.payment_status !== 'paid'
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Não é permitido vincular diagnóstico a pedido sem pagamento confirmado.',
+        },
+        { status: 409 }
       );
     }
 
@@ -274,6 +331,21 @@ export async function PATCH(request: Request) {
 
     if (notes !== undefined) {
       update.notes = notes || null;
+    }
+
+    if (analysisError !== undefined) {
+      update.analysis_error = analysisError || null;
+    }
+
+    if (diagnosticId !== undefined) {
+      update.diagnostic_id = diagnosticId || null;
+
+      if (diagnosticId) {
+        update.analysis_completed_at = now;
+        update.analysis_error = null;
+      } else {
+        update.analysis_completed_at = null;
+      }
     }
 
     const { data, error } = await supabase
