@@ -3163,18 +3163,20 @@ const OrdersPage: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('/api/admin/orders', {
+      const response = await fetch('/api/orders', {
         method: 'GET',
         credentials: 'include',
         cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+        },
       });
 
-      const { data, rawText } = await readApiPayload(response);
+      const { data } = await readApiPayload(response);
 
       if (!response.ok || !data?.success) {
         throw new Error(
           data?.error ||
-            rawText ||
             `Não foi possível carregar os pedidos. HTTP ${response.status}`
         );
       }
@@ -3223,24 +3225,30 @@ const OrdersPage: React.FC = () => {
     setError('');
 
     try {
-      const response = await fetch('/api/admin/orders', {
+      const response = await fetch('/api/orders', {
         method: 'PATCH',
         credentials: 'include',
+        cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify({
           id: selectedOrder.id,
-          ...payload,
+          ...(payload.status
+            ? { commercial_status: payload.status }
+            : {}),
+          ...(payload.notes !== undefined
+            ? { notes: payload.notes }
+            : {}),
         }),
       });
 
-      const { data, rawText } = await readApiPayload(response);
+      const { data } = await readApiPayload(response);
 
       if (!response.ok || !data?.success || !data?.order) {
         throw new Error(
           data?.error ||
-            rawText ||
             `Não foi possível atualizar o pedido. HTTP ${response.status}`
         );
       }
