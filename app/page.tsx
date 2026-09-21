@@ -79,6 +79,42 @@ interface HistoryResponse {
   error?: string;
 }
 
+
+interface AdminOrder {
+  id: string;
+  order_number: string;
+  name: string;
+  email: string;
+  company: string;
+  website: string;
+  segment: string;
+  region: string;
+  competitors: string | null;
+  amount: number;
+  currency: string;
+  commercial_status: string;
+  payment_status: string;
+  mercado_pago_order_id: string | null;
+  mercado_pago_status: string | null;
+  mercado_pago_status_detail: string | null;
+  checkout_url: string | null;
+  payment_confirmed_at: string | null;
+  delivery_due_at: string | null;
+  analysis_started_at: string | null;
+  delivered_at: string | null;
+  confirmation_email_sent_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AdminOrdersResponse {
+  success: boolean;
+  orders?: AdminOrder[];
+  count?: number;
+  error?: string;
+}
+
 type Page =
   | 'landing'
   | 'public-research'
@@ -90,6 +126,7 @@ type Page =
   | 'comparisons'
   | 'insights'
   | 'reports'
+  | 'orders'
   | 'library'
   | 'processing'
   | 'result';
@@ -3008,6 +3045,876 @@ const PublicResearchPage: React.FC<{
   );
 };
 
+
+const formatAdminDate = (value?: string | null) => {
+  if (!value) return '—';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return '—';
+
+  return date.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+};
+
+const formatMoney = (value: number | null | undefined) =>
+  Number(value || 0).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
+
+const commercialStatusLabel = (value: string) => {
+  const labels: Record<string, string> = {
+    interessado: 'Interessado',
+    proposta_enviada: 'Proposta enviada',
+    aguardando_pagamento: 'Aguardando pagamento',
+    pago: 'Pago',
+    em_analise: 'Em análise',
+    entregue: 'Entregue',
+  };
+
+  return labels[value] || value;
+};
+
+const paymentStatusLabel = (value: string) => {
+  const labels: Record<string, string> = {
+    not_started: 'Não iniciado',
+    pending: 'Pendente',
+    paid: 'Pago',
+    failed: 'Falhou',
+    refunded: 'Estornado',
+    partially_refunded: 'Estorno parcial',
+  };
+
+  return labels[value] || value;
+};
+
+const statusBadgeStyle = (
+  status: string,
+  kind: 'commercial' | 'payment'
+): React.CSSProperties => {
+  const paid =
+    status === 'paid' ||
+    status === 'pago' ||
+    status === 'entregue';
+
+  const analysis = status === 'em_analise';
+  const waiting =
+    status === 'pending' ||
+    status === 'aguardando_pagamento' ||
+    status === 'proposta_enviada';
+
+  const failed =
+    status === 'failed' ||
+    status === 'refunded' ||
+    status === 'partially_refunded';
+
+  let background = '#f1f5f9';
+  let color = '#475569';
+  let border = '#e2e8f0';
+
+  if (paid) {
+    background = '#f0fdf4';
+    color = '#166534';
+    border = '#bbf7d0';
+  } else if (analysis) {
+    background = '#eff6ff';
+    color = '#1d4ed8';
+    border = '#bfdbfe';
+  } else if (waiting) {
+    background = '#fffbeb';
+    color = '#92400e';
+    border = '#fde68a';
+  } else if (failed) {
+    background = '#fef2f2';
+    color = '#991b1b';
+    border = '#fecaca';
+  }
+
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: '24px',
+    padding: '3px 8px',
+    borderRadius: '999px',
+    background,
+    color,
+    border: `1px solid ${border}`,
+    fontSize: '9px',
+    fontWeight: 800,
+    whiteSpace: 'nowrap',
+  };
+};
+
+const OrdersPage: React.FC = () => {
+  const [orders, setOrders] = React.useState<AdminOrder[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+  const [filter, setFilter] = React.useState('all');
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [updating, setUpdating] = React.useState(false);
+  const [notesDraft, setNotesDraft] = React.useState('');
+
+  const loadOrders = React.useCallback(async () => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/admin/orders', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const { data, rawText } = await readApiPayload(response);
+
+      if (!response.ok || !data?.success) {
+        throw new Error(
+          data?.error ||
+            rawText ||
+            `Não foi possível carregar os pedidos. HTTP ${response.status}`
+        );
+      }
+
+      const nextOrders = Array.isArray(data.orders) ? data.orders : [];
+      setOrders(nextOrders);
+
+      setSelectedId((current) => {
+        if (current && nextOrders.some((item: AdminOrder) => item.id === current)) {
+          return current;
+        }
+
+        return nextOrders[0]?.id || null;
+      });
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Não foi possível carregar os pedidos.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  const selectedOrder =
+    orders.find((item) => item.id === selectedId) || null;
+
+  React.useEffect(() => {
+    setNotesDraft(selectedOrder?.notes || '');
+  }, [selectedOrder?.id, selectedOrder?.notes]);
+
+  const updateOrder = async (
+    payload: {
+      status?: string;
+      notes?: string;
+    }
+  ) => {
+    if (!selectedOrder) return;
+
+    setUpdating(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/admin/orders', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: selectedOrder.id,
+          ...payload,
+        }),
+      });
+
+      const { data, rawText } = await readApiPayload(response);
+
+      if (!response.ok || !data?.success || !data?.order) {
+        throw new Error(
+          data?.error ||
+            rawText ||
+            `Não foi possível atualizar o pedido. HTTP ${response.status}`
+        );
+      }
+
+      setOrders((current) =>
+        current.map((item) =>
+          item.id === data.order.id ? data.order : item
+        )
+      );
+
+      setNotesDraft(data.order.notes || '');
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : 'Não foi possível atualizar o pedido.'
+      );
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const now = Date.now();
+
+  const paidOrders = orders.filter(
+    (item) => item.payment_status === 'paid'
+  );
+
+  const inAnalysisOrders = orders.filter(
+    (item) => item.commercial_status === 'em_analise'
+  );
+
+  const deliveredOrders = orders.filter(
+    (item) => item.commercial_status === 'entregue'
+  );
+
+  const awaitingOrders = orders.filter(
+    (item) =>
+      item.commercial_status === 'aguardando_pagamento' &&
+      item.payment_status !== 'paid'
+  );
+
+  const overdueOrders = orders.filter((item) => {
+    if (!item.delivery_due_at) return false;
+    if (item.commercial_status === 'entregue') return false;
+
+    const due = new Date(item.delivery_due_at).getTime();
+    return Number.isFinite(due) && due < now;
+  });
+
+  const filteredOrders = orders.filter((item) => {
+    if (filter === 'all') return true;
+    if (filter === 'paid') return item.payment_status === 'paid';
+    if (filter === 'failed') return item.payment_status === 'failed';
+
+    return item.commercial_status === filter;
+  });
+
+  return (
+    <div style={styles.modulePage}>
+      <div style={styles.pageHeading}>
+        <div>
+          <span style={styles.pageEyebrow}>Operação comercial</span>
+          <h1 style={styles.pageTitle}>Pedidos</h1>
+          <p style={styles.pageSubtitle}>
+            Acompanhe pagamentos, prazos e andamento dos diagnósticos contratados.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={loadOrders}
+          style={styles.primaryCompactButton}
+          disabled={loading}
+        >
+          {loading ? 'Atualizando...' : '↻ Atualizar'}
+        </button>
+      </div>
+
+      {error && (
+        <div
+          style={{
+            marginBottom: '14px',
+            padding: '12px 14px',
+            borderRadius: '10px',
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            color: '#991b1b',
+            fontSize: '11px',
+            lineHeight: 1.5,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5,minmax(0,1fr))',
+          gap: '12px',
+          marginBottom: '16px',
+        }}
+      >
+        {[
+          ['Total', orders.length],
+          ['Aguardando', awaitingOrders.length],
+          ['Pagos', paidOrders.length],
+          ['Em análise', inAnalysisOrders.length],
+          ['Atrasados', overdueOrders.length],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            style={{
+              padding: '16px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '14px',
+              background: '#ffffff',
+              boxShadow: '0 8px 24px rgba(15,23,42,.04)',
+            }}
+          >
+            <span
+              style={{
+                display: 'block',
+                color: '#64748b',
+                fontSize: '9px',
+                fontWeight: 750,
+              }}
+            >
+              {label}
+            </span>
+            <strong
+              style={{
+                display: 'block',
+                marginTop: '7px',
+                color: '#0f172a',
+                fontSize: '24px',
+              }}
+            >
+              {value}
+            </strong>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center',
+          marginBottom: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        {[
+          ['all', 'Todos'],
+          ['aguardando_pagamento', 'Aguardando'],
+          ['paid', 'Pagos'],
+          ['em_analise', 'Em análise'],
+          ['entregue', 'Entregues'],
+          ['failed', 'Falhos'],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setFilter(value)}
+            style={{
+              border:
+                filter === value
+                  ? '1px solid #93c5fd'
+                  : '1px solid #e2e8f0',
+              background:
+                filter === value
+                  ? '#eff6ff'
+                  : '#ffffff',
+              color:
+                filter === value
+                  ? '#1d4ed8'
+                  : '#475569',
+              borderRadius: '999px',
+              padding: '7px 11px',
+              fontSize: '9px',
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        style={{
+          border: '1px solid #e2e8f0',
+          borderRadius: '16px',
+          background: '#ffffff',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{
+              width: '100%',
+              minWidth: '980px',
+              borderCollapse: 'collapse',
+              fontSize: '10px',
+            }}
+          >
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                {[
+                  'Pedido',
+                  'Cliente',
+                  'Empresa',
+                  'Pagamento',
+                  'Andamento',
+                  'Valor',
+                  'Prazo',
+                  '',
+                ].map((label) => (
+                  <th
+                    key={label}
+                    style={{
+                      padding: '11px 12px',
+                      borderBottom: '1px solid #e2e8f0',
+                      textAlign: 'left',
+                      color: '#64748b',
+                      fontSize: '9px',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredOrders.map((order) => {
+                const overdue =
+                  Boolean(order.delivery_due_at) &&
+                  order.commercial_status !== 'entregue' &&
+                  new Date(order.delivery_due_at as string).getTime() < now;
+
+                return (
+                  <tr
+                    key={order.id}
+                    style={{
+                      background:
+                        selectedId === order.id
+                          ? '#f8fbff'
+                          : '#ffffff',
+                    }}
+                  >
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <strong style={{ color: '#0f172a' }}>
+                        {order.order_number}
+                      </strong>
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          color: '#94a3b8',
+                          fontSize: '8px',
+                        }}
+                      >
+                        {formatAdminDate(order.created_at)}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <strong style={{ color: '#334155' }}>
+                        {order.name}
+                      </strong>
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          color: '#64748b',
+                          fontSize: '8px',
+                        }}
+                      >
+                        {order.email}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <strong style={{ color: '#334155' }}>
+                        {order.company}
+                      </strong>
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: '3px',
+                          color: '#64748b',
+                          fontSize: '8px',
+                        }}
+                      >
+                        {order.segment}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <span style={statusBadgeStyle(order.payment_status, 'payment')}>
+                        {paymentStatusLabel(order.payment_status)}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <span style={statusBadgeStyle(order.commercial_status, 'commercial')}>
+                        {commercialStatusLabel(order.commercial_status)}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <strong style={{ color: '#0f172a' }}>
+                        {formatMoney(order.amount)}
+                      </strong>
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <span
+                        style={{
+                          color: overdue ? '#b91c1c' : '#475569',
+                          fontWeight: overdue ? 800 : 600,
+                        }}
+                      >
+                        {formatAdminDate(order.delivery_due_at)}
+                      </span>
+                      {overdue && (
+                        <span
+                          style={{
+                            display: 'block',
+                            marginTop: '3px',
+                            color: '#b91c1c',
+                            fontSize: '8px',
+                            fontWeight: 800,
+                          }}
+                        >
+                          Prazo vencido
+                        </span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: '11px 12px', borderBottom: '1px solid #eef2f7' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(order.id)}
+                        style={{
+                          border: '1px solid #bfdbfe',
+                          background: '#eff6ff',
+                          color: '#1d4ed8',
+                          borderRadius: '8px',
+                          padding: '7px 9px',
+                          fontSize: '9px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Ver pedido
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!loading && filteredOrders.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    style={{
+                      padding: '32px',
+                      textAlign: 'center',
+                      color: '#94a3b8',
+                    }}
+                  >
+                    Nenhum pedido encontrado nesse filtro.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selectedOrder && (
+        <div
+          style={{
+            marginTop: '16px',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0,1.15fr) minmax(320px,.85fr)',
+            gap: '16px',
+          }}
+        >
+          <div
+            style={{
+              border: '1px solid #e2e8f0',
+              borderRadius: '16px',
+              background: '#ffffff',
+              padding: '20px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: '16px',
+                alignItems: 'start',
+              }}
+            >
+              <div>
+                <span style={styles.pageEyebrow}>Detalhes do pedido</span>
+                <h2
+                  style={{
+                    margin: '7px 0 4px',
+                    fontSize: '20px',
+                    color: '#0f172a',
+                  }}
+                >
+                  {selectedOrder.company}
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    color: '#64748b',
+                    fontSize: '10px',
+                  }}
+                >
+                  {selectedOrder.order_number}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <span style={statusBadgeStyle(selectedOrder.payment_status, 'payment')}>
+                  {paymentStatusLabel(selectedOrder.payment_status)}
+                </span>
+                <span style={statusBadgeStyle(selectedOrder.commercial_status, 'commercial')}>
+                  {commercialStatusLabel(selectedOrder.commercial_status)}
+                </span>
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: '18px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+                gap: '10px',
+              }}
+            >
+              {[
+                ['Cliente', selectedOrder.name],
+                ['E-mail', selectedOrder.email],
+                ['Site', selectedOrder.website],
+                ['Segmento', selectedOrder.segment],
+                ['Região', selectedOrder.region],
+                ['Concorrentes', selectedOrder.competitors || 'Não informado'],
+                ['Pagamento confirmado', formatAdminDate(selectedOrder.payment_confirmed_at)],
+                ['Prazo de entrega', formatAdminDate(selectedOrder.delivery_due_at)],
+                ['Análise iniciada', formatAdminDate(selectedOrder.analysis_started_at)],
+                ['Entregue em', formatAdminDate(selectedOrder.delivered_at)],
+                ['E-mail de confirmação', formatAdminDate(selectedOrder.confirmation_email_sent_at)],
+                ['Mercado Pago', selectedOrder.mercado_pago_order_id || '—'],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  style={{
+                    padding: '11px',
+                    borderRadius: '10px',
+                    background: '#f8fafc',
+                    border: '1px solid #eef2f7',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'block',
+                      color: '#94a3b8',
+                      fontSize: '8px',
+                      fontWeight: 750,
+                    }}
+                  >
+                    {label}
+                  </span>
+                  <strong
+                    style={{
+                      display: 'block',
+                      marginTop: '4px',
+                      color: '#334155',
+                      fontSize: '10px',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {value}
+                  </strong>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: '16px' }}>
+              <label
+                style={{
+                  display: 'grid',
+                  gap: '6px',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    color: '#334155',
+                  }}
+                >
+                  Observações internas
+                </span>
+                <textarea
+                  value={notesDraft}
+                  onChange={(event) => setNotesDraft(event.target.value)}
+                  rows={4}
+                  placeholder="Ex.: cliente enviou concorrentes adicionais, aguardando logo..."
+                  style={{
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    resize: 'vertical',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    fontSize: '10px',
+                    color: '#0f172a',
+                  }}
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => updateOrder({ notes: notesDraft })}
+                disabled={updating}
+                style={{
+                  marginTop: '9px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#334155',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  cursor: updating ? 'default' : 'pointer',
+                  opacity: updating ? 0.6 : 1,
+                }}
+              >
+                Salvar observações
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              border: '1px solid #dbeafe',
+              borderRadius: '16px',
+              background: '#f8fbff',
+              padding: '20px',
+            }}
+          >
+            <span style={styles.pageEyebrow}>Andamento</span>
+            <h2
+              style={{
+                margin: '7px 0 5px',
+                fontSize: '18px',
+                color: '#0f172a',
+              }}
+            >
+              Atualizar pedido
+            </h2>
+            <p
+              style={{
+                margin: '0 0 16px',
+                color: '#64748b',
+                fontSize: '10px',
+                lineHeight: 1.5,
+              }}
+            >
+              O status financeiro não pode ser marcado como pago manualmente.
+              A confirmação continua vindo do Mercado Pago.
+            </p>
+
+            <div style={{ display: 'grid', gap: '9px' }}>
+              {[
+                ['interessado', 'Interessado'],
+                ['proposta_enviada', 'Proposta enviada'],
+                ['aguardando_pagamento', 'Aguardando pagamento'],
+                ['pago', 'Pago'],
+                ['em_analise', 'Iniciar análise'],
+                ['entregue', 'Marcar como entregue'],
+              ].map(([status, label]) => {
+                const requiresPaid =
+                  status === 'pago' ||
+                  status === 'em_analise' ||
+                  status === 'entregue';
+
+                const disabled =
+                  updating ||
+                  (requiresPaid &&
+                    selectedOrder.payment_status !== 'paid');
+
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() =>
+                      updateOrder({
+                        status,
+                        notes: notesDraft,
+                      })
+                    }
+                    disabled={disabled}
+                    style={{
+                      border:
+                        selectedOrder.commercial_status === status
+                          ? '1px solid #2563eb'
+                          : '1px solid #cbd5e1',
+                      background:
+                        selectedOrder.commercial_status === status
+                          ? '#2563eb'
+                          : '#ffffff',
+                      color:
+                        selectedOrder.commercial_status === status
+                          ? '#ffffff'
+                          : '#334155',
+                      borderRadius: '9px',
+                      padding: '10px 12px',
+                      textAlign: 'left',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                      opacity: disabled ? 0.45 : 1,
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              style={{
+                marginTop: '16px',
+                padding: '12px',
+                borderRadius: '10px',
+                background: '#ffffff',
+                border: '1px solid #dbeafe',
+                color: '#64748b',
+                fontSize: '9px',
+                lineHeight: 1.55,
+              }}
+            >
+              <strong style={{ color: '#334155' }}>Regra:</strong>{' '}
+              “Em análise” e “Entregue” só ficam disponíveis para pedidos com
+              pagamento confirmado.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TOP_NAV_ITEMS: Array<{ key: Page; label: string }> = [
   { key: 'home', label: 'Início' },
   { key: 'research', label: 'Pesquisa' },
@@ -3015,6 +3922,7 @@ const TOP_NAV_ITEMS: Array<{ key: Page; label: string }> = [
   { key: 'comparisons', label: 'Comparativos' },
   { key: 'insights', label: 'Insights' },
   { key: 'reports', label: 'Relatórios' },
+  { key: 'orders', label: 'Pedidos' },
   { key: 'library', label: 'Biblioteca' },
 ];
 
@@ -6103,6 +7011,10 @@ export default function ANAIAApp() {
                 title="Relatórios"
                 subtitle="Consolide análises em relatórios claros e compartilháveis."
               />
+            )}
+
+            {page === 'orders' && (
+              <OrdersPage />
             )}
 
             {page === 'library' && (
